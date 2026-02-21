@@ -60,6 +60,12 @@ const (
 	movieMonoAnimeURL      = "https://www.dmm.co.jp/mono/anime/-/detail/=/cid=%s/"
 )
 
+/*
+新增功能点：
+1.增加影片时长Runtime参数（plugin）
+2.没有BWH，也能展示cup（sdk）
+3.展示演员的推特和ins名称，如果能用超链接就更好（sdk、plugin）
+*/
 const regionNotAvailable = "not-available-in-your-region"
 
 var (

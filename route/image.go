@@ -118,10 +118,18 @@ func getImage(app *engine.Engine, typ imageType) gin.HandlerFunc {
 			return
 		}
 
+		// lj-支持无码破解的标签，但不能自定义图片，目前是完全写死的，无码标签默认在封面右上角
 		if query.Badge != "" {
-			if img, err = badge.Badge(img, query.Badge); err != nil {
-				abortWithError(c, err)
-				return
+			if query.Badge == "wuma.png" {
+				if img, err = badge.Wuma(img); err != nil {
+					abortWithError(c, err)
+					return
+				}
+			} else {
+				if img, err = badge.Badge(img, query.Badge); err != nil {
+					abortWithError(c, err)
+					return
+				}
 			}
 		}
 

@@ -110,14 +110,22 @@ func (avl *AVLeague) GetActorInfoByURL(rawURL string) (info *model.ActorInfo, er
 	c.OnXML(`//*[@id="contents"]//table/tbody/tr`, func(e *colly.XMLElement) {
 		row := strings.TrimSpace(e.ChildText(`.//th`))
 		data := strings.TrimSpace(e.ChildText(`.//td`))
-		if data == "不明" {
+		if data == "不明" || data == "なし" {
 			return // ignore unknown
 		}
+		// lj-增加推特和ins的超链接，以及演员标签
 		switch row {
 		case "3サイズ":
 			B, W, H, Cup := parseMeasurements(data)
-			if B != 0 && W != 0 && H != 0 {
-				info.Measurements = fmt.Sprintf("B:%d / W:%d / H:%d", B, W, H)
+			// lj-任何一个不为0，都能转换
+			if B != 0 || W != 0 || H != 0 {
+				f := func(v int) interface{} {
+					if v == 0 {
+						return "-"
+					}
+					return v
+				}
+				info.Measurements = fmt.Sprintf("B:%v / W:%v / H:%v", f(B), f(W), f(H))
 			}
 			info.CupSize = Cup
 		case "身長":
@@ -130,6 +138,12 @@ func (avl *AVLeague) GetActorInfoByURL(rawURL string) (info *model.ActorInfo, er
 			info.Nationality = data
 		case "デビュー":
 			info.DebutDate = parseDate(data)
+		case "Twitter":
+			info.Twitter = parseHref(data)
+		case "インスタ":
+			info.Instagram = parseHref(data)
+		case "タグ":
+			info.Tags = parseTag(data)
 		}
 	})
 
@@ -146,6 +160,7 @@ func (avl *AVLeague) SearchActor(keyword string) (results []*model.ActorSearchRe
 		id, _ := avl.ParseActorIDFromURL(homepage)
 		// Name
 		actor := strings.TrimSpace(e.ChildText(`.//div[@class="l-name"]/a`))
+		// lj-还不清楚演员的多张图片是怎么来的，知道的话看下是否有优化空间
 		// Images
 		var images []string
 		if img := e.ChildAttr(`.//div[@class="l-pic"]/a/img`, "data-layzr" /* lazy loading */); img != "" {
@@ -165,6 +180,7 @@ func (avl *AVLeague) SearchActor(keyword string) (results []*model.ActorSearchRe
 	return
 }
 
+// lj-兼容没有BWH的场景，也能取到cup
 func parseMeasurements(s string) (B, W, H int, Cup string) {
 	for _, item := range strings.Split(s, "/") {
 		name, data, found := strings.Cut(item, ":")
@@ -173,7 +189,8 @@ func parseMeasurements(s string) (B, W, H int, Cup string) {
 		}
 		switch strings.TrimSpace(name) {
 		case "B":
-			if ss := regexp.MustCompile(`(\d+)（([A-Z])）`).FindStringSubmatch(data); len(ss) == 3 {
+			// 改进版：将 \d+ 改为 [-\d]*，表示匹配数字或减号   兼容B: - （A） / W: - / H: -
+			if ss := regexp.MustCompile(`([-\d]*)（([A-Z])）`).FindStringSubmatch(data); len(ss) == 3 {
 				B = parser.ParseInt(ss[1])
 				Cup = ss[2]
 			}
@@ -198,6 +215,46 @@ func parseDate(s string) (date dt.Date) {
 		}
 	}()
 	return parser.ParseDate(s)
+}
+
+func parseHref(s string) (href string) {
+	// 1. 去除两端可能存在的空格和双引号
+	text := strings.TrimSpace(s)
+	text = strings.Trim(s, "\"")
+	text = strings.TrimSpace(text)
+
+	// 2. 定义需要去除的特定前缀
+	// 考虑到抓取时可能出现的多种变体，这里可以做容错处理
+	prefixes := []string{"https:x.com", "https://x.com/"}
+
+	for _, p := range prefixes {
+		if strings.HasPrefix(text, p) {
+			text = strings.TrimPrefix(text, p)
+			break // 匹配到一个就跳出
+		}
+	}
+
+	// 3. 如果处理完后还残留着斜杠（针对 https:x.com/username 情况）
+	text = strings.TrimPrefix(text, "/")
+
+	return text
+}
+
+func parseTag(s string) []string {
+	// s 是由 strings.TrimSpace(e.ChildText(`.//td`)) 传入的字符串
+	// 输出示例: "30代、巨乳、レズ..."
+
+	// 1. 按中文/日文逗号分割
+	rawTags := strings.Split(s, "、")
+
+	var cleanTags []string
+	for _, tag := range rawTags {
+		t := strings.TrimSpace(tag)
+		if t != "" {
+			cleanTags = append(cleanTags, t)
+		}
+	}
+	return cleanTags
 }
 
 func init() {

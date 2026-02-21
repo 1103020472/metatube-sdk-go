@@ -33,6 +33,9 @@ type ActorInfo struct {
 	Hobby        string         `json:"hobby"`
 	Skill        string         `json:"skill"`
 	BloodType    string         `json:"blood_type"`
+	Twitter      string         `json:"twitter"`
+	Instagram    string         `json:"instagram"`
+	Tags         []string       `json:"tagss"`
 	CupSize      string         `json:"cup_size"`
 	Measurements string         `json:"measurements"`
 	Nationality  string         `json:"nationality"`

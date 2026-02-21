@@ -25,22 +25,48 @@ func init() {
 }
 
 func Badge(src image.Image, badge string) (image.Image, error) {
+	img, i, err := getBadgeFromCache(badge)
+	if err != nil {
+		return i, err
+	}
+	wmk := imageutil.Resize(img, 0, src.Bounds().Dy()/5 /* 0.2 */)
+	return imageutil.Watermark(src, wmk, image.Point{}), nil
+}
+
+func getBadgeFromCache(badge string) (image.Image, image.Image, error) {
 	var img image.Image
 	if item := badgeCache.Get(badge); item != nil {
 		img = item.Value()
 	} else {
 		resp, err := badgeFetcher.Fetch(badge)
 		if err != nil {
-			return nil, fmt.Errorf("fetch badge: %w", err)
+			return nil, nil, fmt.Errorf("fetch badge: %w", err)
 		}
 		defer resp.Body.Close()
 		// decode badge image.
 		img, _, err = imageutil.Decode(resp.Body)
 		if err != nil {
-			return nil, fmt.Errorf("decode badge: %w", err)
+			return nil, nil, fmt.Errorf("decode badge: %w", err)
 		}
 		badgeCache.Set(badge, img, ttlcache.DefaultTTL)
 	}
-	wmk := imageutil.Resize(img, 0, src.Bounds().Dy()/5 /* 0.2 */)
-	return imageutil.Watermark(src, wmk, image.Point{}), nil
+	return img, nil, nil
+}
+
+func Wuma(src image.Image) (image.Image, error) {
+	img, i, err := getBadgeFromCache("wuma.png")
+	if err != nil {
+		return i, err
+	}
+	wmk := imageutil.Resize(img, 0, src.Bounds().Dy()/5)
+
+	// 计算右上角坐标：
+	// X = 主图最右侧边界 - 标签宽度
+	// Y = 0 (贴顶)
+	rightTopPos := image.Point{
+		X: src.Bounds().Max.X - wmk.Bounds().Dx(),
+		Y: 0,
+	}
+
+	return imageutil.Watermark(src, wmk, rightTopPos), nil
 }
