@@ -3,7 +3,7 @@ package cluster
 import (
 	"cmp"
 
-	"github.com/metatube-community/metatube-sdk-go/collection/unionfind"
+	"github.com/1103020472/metatube-sdk-go/collection/unionfind"
 )
 
 type Group[T Locatable[T, R], R cmp.Ordered] struct {

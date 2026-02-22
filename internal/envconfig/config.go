@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/metatube-community/metatube-sdk-go/collection/maps"
-	"github.com/metatube-community/metatube-sdk-go/provider"
+	"github.com/1103020472/metatube-sdk-go/collection/maps"
+	"github.com/1103020472/metatube-sdk-go/provider"
 )
 
 var _ provider.Config = (*Config)(nil)

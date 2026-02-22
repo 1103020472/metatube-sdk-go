@@ -3,7 +3,7 @@ package caribbeancompr
 import (
 	"testing"
 
-	"github.com/metatube-community/metatube-sdk-go/provider/internal/testkit"
+	"github.com/1103020472/metatube-sdk-go/provider/internal/testkit"
 )
 
 func TestCaribbeancomPremium_GetMovieInfoByID(t *testing.T) {

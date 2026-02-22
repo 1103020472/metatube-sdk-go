@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/metatube-community/metatube-sdk-go/provider/internal/testkit"
+	"github.com/1103020472/metatube-sdk-go/provider/internal/testkit"
 )
 
 func TestMadouQu_GetMovieInfoByID(t *testing.T) {

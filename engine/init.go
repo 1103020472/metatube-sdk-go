@@ -4,8 +4,8 @@ import (
 	"log"
 	"os"
 
-	"github.com/metatube-community/metatube-sdk-go/common/fetch"
-	mt "github.com/metatube-community/metatube-sdk-go/provider"
+	"github.com/1103020472/metatube-sdk-go/common/fetch"
+	mt "github.com/1103020472/metatube-sdk-go/provider"
 )
 
 func (e *Engine) init() *Engine {

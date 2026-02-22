@@ -3,13 +3,13 @@ package engine
 import (
 	"image"
 
-	"github.com/metatube-community/metatube-sdk-go/common/number"
-	R "github.com/metatube-community/metatube-sdk-go/constant"
-	"github.com/metatube-community/metatube-sdk-go/detector"
-	"github.com/metatube-community/metatube-sdk-go/engine/providerid"
-	"github.com/metatube-community/metatube-sdk-go/imageutil"
-	"github.com/metatube-community/metatube-sdk-go/model"
-	mt "github.com/metatube-community/metatube-sdk-go/provider"
+	"github.com/1103020472/metatube-sdk-go/common/number"
+	R "github.com/1103020472/metatube-sdk-go/constant"
+	"github.com/1103020472/metatube-sdk-go/detector"
+	"github.com/1103020472/metatube-sdk-go/engine/providerid"
+	"github.com/1103020472/metatube-sdk-go/imageutil"
+	"github.com/1103020472/metatube-sdk-go/model"
+	mt "github.com/1103020472/metatube-sdk-go/provider"
 )
 
 // Default position constants for different kind of images.

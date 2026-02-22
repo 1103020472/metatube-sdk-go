@@ -7,7 +7,7 @@ import (
 
 	"golang.org/x/text/language"
 
-	"github.com/metatube-community/metatube-sdk-go/model"
+	"github.com/1103020472/metatube-sdk-go/model"
 )
 
 type Provider interface {

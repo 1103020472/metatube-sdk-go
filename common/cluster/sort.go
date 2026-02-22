@@ -5,7 +5,7 @@ import (
 	"slices"
 	"sort"
 
-	weighted "github.com/metatube-community/metatube-sdk-go/collection/slices"
+	weighted "github.com/1103020472/metatube-sdk-go/collection/slices"
 )
 
 // SortGroupsBySize sorts the provided groups in-place by descending the number of items.

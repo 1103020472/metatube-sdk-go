@@ -9,11 +9,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/render"
 
-	R "github.com/metatube-community/metatube-sdk-go/constant"
-	"github.com/metatube-community/metatube-sdk-go/engine"
-	"github.com/metatube-community/metatube-sdk-go/imageutil"
-	"github.com/metatube-community/metatube-sdk-go/imageutil/badge"
-	mt "github.com/metatube-community/metatube-sdk-go/provider"
+	R "github.com/1103020472/metatube-sdk-go/constant"
+	"github.com/1103020472/metatube-sdk-go/engine"
+	"github.com/1103020472/metatube-sdk-go/imageutil"
+	"github.com/1103020472/metatube-sdk-go/imageutil/badge"
+	mt "github.com/1103020472/metatube-sdk-go/provider"
 )
 
 type imageType uint8
@@ -34,6 +34,7 @@ type imageQuery struct {
 	Position float64 `form:"pos"`
 	Auto     bool    `form:"auto"`
 	Badge    string  `form:"badge"`
+	Umr      string  `form:"umr"`
 	Quality  int     `form:"quality"`
 }
 
@@ -120,16 +121,15 @@ func getImage(app *engine.Engine, typ imageType) gin.HandlerFunc {
 
 		// lj-支持无码破解的标签，但不能自定义图片，目前是完全写死的，无码标签默认在封面右上角
 		if query.Badge != "" {
-			if query.Badge == "wuma.png" {
-				if img, err = badge.Wuma(img); err != nil {
-					abortWithError(c, err)
-					return
-				}
-			} else {
-				if img, err = badge.Badge(img, query.Badge); err != nil {
-					abortWithError(c, err)
-					return
-				}
+			if img, err = badge.Badge(img, query.Badge); err != nil {
+				abortWithError(c, err)
+				return
+			}
+		}
+		if query.Umr != "" {
+			if img, err = badge.Umr(img, query.Umr); err != nil {
+				abortWithError(c, err)
+				return
 			}
 		}
 

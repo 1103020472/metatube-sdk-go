@@ -1,10 +1,10 @@
 # MetaTube SDK Go
 
-[![Build Status](https://img.shields.io/github/actions/workflow/status/metatube-community/metatube-sdk-go/docker.yml?branch=main&style=flat-square&logo=github-actions)](https://github.com/metatube-community/metatube-sdk-go/actions/workflows/release.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/metatube-community/metatube-sdk-go?style=flat-square)](https://github.com/metatube-community/metatube-sdk-go)
-[![Require Go Version](https://img.shields.io/badge/go-%3E%3D1.23-30dff3?style=flat-square&logo=go)](https://github.com/metatube-community/metatube-sdk-go/blob/main/go.mod)
-[![GitHub License](https://img.shields.io/github/license/metatube-community/metatube-sdk-go?color=e4682a&logo=apache&style=flat-square)](https://github.com/metatube-community/metatube-sdk-go/blob/main/LICENSE)
-[![Tag](https://img.shields.io/github/v/tag/metatube-community/metatube-sdk-go?color=%23ff8936&logo=fitbit&style=flat-square)](https://github.com/metatube-community/metatube-sdk-go/tags)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/metatube-community/metatube-sdk-go/docker.yml?branch=main&style=flat-square&logo=github-actions)](https://github.com/1103020472/metatube-sdk-go/actions/workflows/release.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/1103020472/metatube-sdk-go?style=flat-square)](https://github.com/1103020472/metatube-sdk-go)
+[![Require Go Version](https://img.shields.io/badge/go-%3E%3D1.23-30dff3?style=flat-square&logo=go)](https://github.com/1103020472/metatube-sdk-go/blob/main/go.mod)
+[![GitHub License](https://img.shields.io/github/license/metatube-community/metatube-sdk-go?color=e4682a&logo=apache&style=flat-square)](https://github.com/1103020472/metatube-sdk-go/blob/main/LICENSE)
+[![Tag](https://img.shields.io/github/v/tag/metatube-community/metatube-sdk-go?color=%23ff8936&logo=fitbit&style=flat-square)](https://github.com/1103020472/metatube-sdk-go/tags)
 
 Metadata Tube SDK in Golang.
 
@@ -42,7 +42,7 @@ To install this package, you first need [Go](https://golang.org/) installed (**g
 the below Go command to install SDK.
 
 ```sh
-go get -u github.com/metatube-community/metatube-sdk-go
+go get -u github.com/1103020472/metatube-sdk-go
 ```
 
 ## Credits
@@ -61,4 +61,4 @@ go get -u github.com/metatube-community/metatube-sdk-go
 
 ## License
 
-[Apache-2.0 License](https://github.com/metatube-community/metatube-sdk-go/blob/main/LICENSE)
+[Apache-2.0 License](https://github.com/1103020472/metatube-sdk-go/blob/main/LICENSE)

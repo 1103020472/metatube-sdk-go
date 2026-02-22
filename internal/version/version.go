@@ -22,7 +22,7 @@ func init() {
 // modVersion returns the module version from go.mod
 // when this package is used as a dependency.
 func modVersion() string {
-	const module = "github.com/metatube-community/metatube-sdk-go"
+	const module = "github.com/1103020472/metatube-sdk-go"
 	for _, mod := range Modules() {
 		if mod.Path == module {
 			return mod.Version

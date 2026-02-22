@@ -3,8 +3,8 @@ package pacopacomama
 import (
 	"regexp"
 
-	"github.com/metatube-community/metatube-sdk-go/provider"
-	"github.com/metatube-community/metatube-sdk-go/provider/1pondo/core"
+	"github.com/1103020472/metatube-sdk-go/provider"
+	"github.com/1103020472/metatube-sdk-go/provider/1pondo/core"
 )
 
 var (

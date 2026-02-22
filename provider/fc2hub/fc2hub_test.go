@@ -3,7 +3,7 @@ package fc2hub
 import (
 	"testing"
 
-	"github.com/metatube-community/metatube-sdk-go/provider/internal/testkit"
+	"github.com/1103020472/metatube-sdk-go/provider/internal/testkit"
 )
 
 func TestFC2HUB_GetMovieInfoByID(t *testing.T) {

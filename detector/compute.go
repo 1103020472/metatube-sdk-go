@@ -5,8 +5,8 @@ import (
 
 	pigo "github.com/esimov/pigo/core"
 
-	"github.com/metatube-community/metatube-sdk-go/common/cluster"
-	"github.com/metatube-community/metatube-sdk-go/detector/internal/position"
+	"github.com/1103020472/metatube-sdk-go/common/cluster"
+	"github.com/1103020472/metatube-sdk-go/detector/internal/position"
 )
 
 const (

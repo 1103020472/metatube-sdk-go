@@ -11,9 +11,9 @@ import (
 	"github.com/gocolly/colly/v2"
 	"golang.org/x/text/language"
 
-	"github.com/metatube-community/metatube-sdk-go/common/parser"
-	"github.com/metatube-community/metatube-sdk-go/model"
-	"github.com/metatube-community/metatube-sdk-go/provider/internal/scraper"
+	"github.com/1103020472/metatube-sdk-go/common/parser"
+	"github.com/1103020472/metatube-sdk-go/model"
+	"github.com/1103020472/metatube-sdk-go/provider/internal/scraper"
 )
 
 type Core struct {

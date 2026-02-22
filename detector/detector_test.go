@@ -22,8 +22,8 @@ import (
 	"golang.org/x/image/font/basicfont"
 	"golang.org/x/image/math/fixed"
 
-	"github.com/metatube-community/metatube-sdk-go/common/cluster"
-	"github.com/metatube-community/metatube-sdk-go/detector/internal/position"
+	"github.com/1103020472/metatube-sdk-go/common/cluster"
+	"github.com/1103020472/metatube-sdk-go/detector/internal/position"
 )
 
 /*

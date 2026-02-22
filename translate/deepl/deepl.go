@@ -5,7 +5,7 @@ import (
 
 	deeplx "github.com/xjasonlyu/deeplx-translator"
 
-	"github.com/metatube-community/metatube-sdk-go/translate"
+	"github.com/1103020472/metatube-sdk-go/translate"
 )
 
 var _ translate.Translator = (*DeepL)(nil)

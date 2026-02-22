@@ -9,10 +9,10 @@ import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 
-	"github.com/metatube-community/metatube-sdk-go/engine"
-	"github.com/metatube-community/metatube-sdk-go/errors"
-	V "github.com/metatube-community/metatube-sdk-go/internal/version"
-	"github.com/metatube-community/metatube-sdk-go/route/auth"
+	"github.com/1103020472/metatube-sdk-go/engine"
+	"github.com/1103020472/metatube-sdk-go/errors"
+	V "github.com/1103020472/metatube-sdk-go/internal/version"
+	"github.com/1103020472/metatube-sdk-go/route/auth"
 )
 
 func New(app *engine.Engine, v auth.Validator) *gin.Engine {

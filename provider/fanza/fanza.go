@@ -21,17 +21,17 @@ import (
 	"golang.org/x/text/language"
 	dt "gorm.io/datatypes"
 
-	"github.com/metatube-community/metatube-sdk-go/collection/sets"
-	"github.com/metatube-community/metatube-sdk-go/common/comparer"
-	"github.com/metatube-community/metatube-sdk-go/common/js"
-	"github.com/metatube-community/metatube-sdk-go/common/number"
-	"github.com/metatube-community/metatube-sdk-go/common/parser"
-	"github.com/metatube-community/metatube-sdk-go/model"
-	"github.com/metatube-community/metatube-sdk-go/provider"
-	"github.com/metatube-community/metatube-sdk-go/provider/fanza/internal/graphql"
-	"github.com/metatube-community/metatube-sdk-go/provider/fanza/internal/searchparse"
-	"github.com/metatube-community/metatube-sdk-go/provider/internal/imcmp"
-	"github.com/metatube-community/metatube-sdk-go/provider/internal/scraper"
+	"github.com/1103020472/metatube-sdk-go/collection/sets"
+	"github.com/1103020472/metatube-sdk-go/common/comparer"
+	"github.com/1103020472/metatube-sdk-go/common/js"
+	"github.com/1103020472/metatube-sdk-go/common/number"
+	"github.com/1103020472/metatube-sdk-go/common/parser"
+	"github.com/1103020472/metatube-sdk-go/model"
+	"github.com/1103020472/metatube-sdk-go/provider"
+	"github.com/1103020472/metatube-sdk-go/provider/fanza/internal/graphql"
+	"github.com/1103020472/metatube-sdk-go/provider/fanza/internal/searchparse"
+	"github.com/1103020472/metatube-sdk-go/provider/internal/imcmp"
+	"github.com/1103020472/metatube-sdk-go/provider/internal/scraper"
 )
 
 var (

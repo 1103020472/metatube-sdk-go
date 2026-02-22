@@ -3,7 +3,7 @@ package openai
 import (
 	openai "github.com/xjasonlyu/openai-translator"
 
-	"github.com/metatube-community/metatube-sdk-go/translate"
+	"github.com/1103020472/metatube-sdk-go/translate"
 )
 
 var _ translate.Translator = (*OpenAI)(nil)

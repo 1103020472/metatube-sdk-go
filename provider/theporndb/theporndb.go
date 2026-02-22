@@ -1,7 +1,7 @@
 package theporndb
 
 import (
-	"github.com/metatube-community/metatube-sdk-go/provider"
+	"github.com/1103020472/metatube-sdk-go/provider"
 )
 
 // ThePornDB is disabled by default, to enable:

@@ -11,7 +11,7 @@ import (
 	"golang.org/x/net/html"
 	dt "gorm.io/datatypes"
 
-	"github.com/metatube-community/metatube-sdk-go/common/convertor"
+	"github.com/1103020472/metatube-sdk-go/common/convertor"
 )
 
 // ParseInt parses string to int regardless.

@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/metatube-community/metatube-sdk-go/collection/maps"
+	"github.com/1103020472/metatube-sdk-go/collection/maps"
 )
 
 const (

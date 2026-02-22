@@ -35,7 +35,7 @@ type ActorInfo struct {
 	BloodType    string         `json:"blood_type"`
 	Twitter      string         `json:"twitter"`
 	Instagram    string         `json:"instagram"`
-	Tags         []string       `json:"tagss"`
+	Tags         pq.StringArray `json:"tags" gorm:"type:text[]"`
 	CupSize      string         `json:"cup_size"`
 	Measurements string         `json:"measurements"`
 	Nationality  string         `json:"nationality"`

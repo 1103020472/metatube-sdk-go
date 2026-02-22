@@ -8,7 +8,7 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/text/language"
 
-	"github.com/metatube-community/metatube-sdk-go/provider"
+	"github.com/1103020472/metatube-sdk-go/provider"
 )
 
 var (

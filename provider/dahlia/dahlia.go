@@ -1,8 +1,8 @@
 package dahlia
 
 import (
-	"github.com/metatube-community/metatube-sdk-go/provider"
-	"github.com/metatube-community/metatube-sdk-go/provider/dahlia/core"
+	"github.com/1103020472/metatube-sdk-go/provider"
+	"github.com/1103020472/metatube-sdk-go/provider/dahlia/core"
 )
 
 var (

@@ -3,7 +3,7 @@ package fetch
 import (
 	"net/http"
 
-	"github.com/metatube-community/metatube-sdk-go/common/random"
+	"github.com/1103020472/metatube-sdk-go/common/random"
 )
 
 // Context is used for each request.

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/metatube-community/metatube-sdk-go/common/cluster"
+	"github.com/1103020472/metatube-sdk-go/common/cluster"
 )
 
 var _ cluster.Locatable[Position, float64] = (*Position)(nil)

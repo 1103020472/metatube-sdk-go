@@ -2,6 +2,7 @@ package avleague
 
 import (
 	"fmt"
+	"log"
 	"net/url"
 	"path"
 	"regexp"
@@ -12,10 +13,10 @@ import (
 	"golang.org/x/text/language"
 	dt "gorm.io/datatypes"
 
-	"github.com/metatube-community/metatube-sdk-go/common/parser"
-	"github.com/metatube-community/metatube-sdk-go/model"
-	"github.com/metatube-community/metatube-sdk-go/provider"
-	"github.com/metatube-community/metatube-sdk-go/provider/internal/scraper"
+	"github.com/1103020472/metatube-sdk-go/common/parser"
+	"github.com/1103020472/metatube-sdk-go/model"
+	"github.com/1103020472/metatube-sdk-go/provider"
+	"github.com/1103020472/metatube-sdk-go/provider/internal/scraper"
 )
 
 var (
@@ -139,7 +140,7 @@ func (avl *AVLeague) GetActorInfoByURL(rawURL string) (info *model.ActorInfo, er
 		case "デビュー":
 			info.DebutDate = parseDate(data)
 		case "Twitter":
-			info.Twitter = parseHref(data)
+			info.Twitter = parseHrefV2(data)
 		case "インスタ":
 			info.Instagram = parseHref(data)
 		case "タグ":
@@ -217,7 +218,13 @@ func parseDate(s string) (date dt.Date) {
 	return parser.ParseDate(s)
 }
 
+func parseHrefV2(s string) (href string) {
+	log.Print("test")
+	return s
+}
+
 func parseHref(s string) (href string) {
+	log.Print("--------------lj---------------parseHref-source:" + href)
 	// 1. 去除两端可能存在的空格和双引号
 	text := strings.TrimSpace(s)
 	text = strings.Trim(s, "\"")
@@ -236,6 +243,7 @@ func parseHref(s string) (href string) {
 
 	// 3. 如果处理完后还残留着斜杠（针对 https:x.com/username 情况）
 	text = strings.TrimPrefix(text, "/")
+	log.Print("--------------lj---------------parseHref:" + text)
 
 	return text
 }
