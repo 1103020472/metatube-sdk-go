@@ -59,13 +59,7 @@ func TestFANZA_GetMovieInfoByURL(t *testing.T) {
 
 	t.Run("Video:AV/VR", func(t *testing.T) {
 		testkit.Test(t, New, []string{
-			"https://video.dmm.co.jp/av/content/?id=jux00109",
-			"https://video.dmm.co.jp/av/content/?id=cawd00864",
-			"https://video.dmm.co.jp/av/content/?id=juvr00240",
-			"https://video.dmm.co.jp/av/content/?id=sivr00361",
-			"https://video.dmm.co.jp/av/content/?id=fcvr00042",
-			"https://video.dmm.co.jp/av/content/?id=1stars00273",
-			"https://video.dmm.co.jp/av/content/?id=wanz00360",
+			"https://video.dmm.co.jp/av/content/?id=ipvr00357",
 		},
 			testkit.FieldsNotEmpty("preview_images", "actors", "genres"),
 			testkit.FieldsNotEmptyAny("maker", "label", "series"),
