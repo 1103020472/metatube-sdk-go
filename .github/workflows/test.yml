@@ -33,4 +33,4 @@ jobs:
       - name: Run test
         run: |
           go version
-          go test $(go list ./... | grep -Ev "github.com/metatube-community/metatube-sdk-go/translate")
+          go test $(go list ./... | grep -Ev "github.com/1103020472/metatube-sdk-go/translate")

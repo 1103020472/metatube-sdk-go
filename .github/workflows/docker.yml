@@ -67,7 +67,7 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ghcr.io/metatube-community/metatube-server:latest
-            ghcr.io/metatube-community/metatube-server:${{ steps.shell.outputs.version }}
+            ghcr.io/1103020472/metatube-server:latest
+            ghcr.io/1103020472/metatube-server:${{ steps.shell.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
