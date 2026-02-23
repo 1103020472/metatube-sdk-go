@@ -188,17 +188,19 @@ func parseMeasurements(s string) (B, W, H int, Cup string) {
 		if !found {
 			continue
 		}
+		trimmedData := strings.TrimSpace(data)
 		switch strings.TrimSpace(name) {
+		// B: - （C） / W: - / H: -
 		case "B":
 			// 改进版：将 \d+ 改为 [-\d]*，表示匹配数字或减号   兼容B: - （A） / W: - / H: -
-			if ss := regexp.MustCompile(`([-\d]*)（([A-Z])）`).FindStringSubmatch(data); len(ss) == 3 {
+			if ss := regexp.MustCompile(`([-−\d]+)(?:\s*[（(]([A-Z]?)[）)])?`).FindStringSubmatch(data); len(ss) == 3 {
 				B = parser.ParseInt(ss[1])
 				Cup = ss[2]
 			}
 		case "W":
-			W = parser.ParseInt(data)
+			W = parser.ParseInt(trimmedData)
 		case "H":
-			H = parser.ParseInt(data)
+			H = parser.ParseInt(trimmedData)
 		}
 	}
 	return
