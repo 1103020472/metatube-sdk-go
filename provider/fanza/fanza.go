@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"path"
@@ -15,8 +16,6 @@ import (
 	"time"
 
 	"github.com/antchfx/htmlquery"
-	"github.com/docker/go-units"
-	"github.com/gocolly/colly/v2"
 	"golang.org/x/net/html"
 	"golang.org/x/text/language"
 	dt "gorm.io/datatypes"
@@ -210,6 +209,17 @@ func (fz *FANZA) getDigitalMovieInfoByURL(rawURL string) (*model.MovieInfo, erro
 	if len(info.Actors) == 0 && data.PPVContent.AmateurActress.Name != "" {
 		info.Actors = append(info.Actors, data.PPVContent.AmateurActress.Name)
 	}
+
+	// ===================== 新增：av-wiki 兜底逻辑 =====================
+	// 替换为你业务中的真实番号变量，如 data.Code / data.Number 等
+	if len(info.Actors) == 0 {
+		wikiActors, err := getActorsFromWiki(info.Number)
+		if err == nil && len(wikiActors) > 0 {
+			log.Print("通过av-wiki获取演员：" + info.Number)
+			info.Actors = append(info.Actors, wikiActors...)
+		}
+	}
+	// ================================================================
 
 	// Genres
 	for _, genre := range data.PPVContent.Genres {
@@ -1039,6 +1049,107 @@ func PreviewSrc(s string) string {
 	} else {
 		return strings.ReplaceAll(s, "-", "jp-")
 	}
+}
+
+// 补充：从 av-wiki.net 兜底获取演员
+func getActorsFromWiki(code string) ([]string, error) {
+	if code == "" {
+		return nil, errors.New("番号为空")
+	}
+
+	// 1. 构造请求URL
+	searchURL := fmt.Sprintf("https://av-wiki.net/?s=%s&post_type=product", url.QueryEscape(code))
+
+	// 2. 发送GET请求
+	client := &http.Client{}
+	req, err := http.NewRequest("GET", searchURL, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// 模拟浏览器请求头，避免被拦截
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36")
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("请求失败，状态码：%d", resp.StatusCode)
+	}
+
+	// 3. 解析HTML，提取 actress-name 下的所有演员
+	doc, err := html.Parse(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var actors []string
+	// 递归遍历HTML节点
+	var traverse func(*html.Node)
+	traverse = func(n *html.Node) {
+		// 找到 class=actress-name 的 li 节点
+		if n.Type == html.ElementNode && n.Data == "li" {
+			var isActressNode bool
+			for _, attr := range n.Attr {
+				if attr.Key == "class" && attr.Val == "actress-name" {
+					isActressNode = true
+					break
+				}
+			}
+
+			// 提取该节点下所有 a 标签的文本（演员名）
+			if isActressNode {
+				for child := n.FirstChild; child != nil; child = child.NextSibling {
+					if child.Type == html.ElementNode && child.Data == "a" {
+						// 提取a标签内的文本
+						actorName := strings.TrimSpace(getNodeText(child))
+						if actorName != "" {
+							actors = append(actors, actorName)
+						}
+					}
+				}
+			}
+		}
+
+		// 递归子节点
+		for child := n.FirstChild; child != nil; child = child.NextSibling {
+			traverse(child)
+		}
+	}
+
+	traverse(doc)
+
+	// 去重（可选）
+	actors = uniqueSlice(actors)
+	return actors, nil
+}
+
+// 提取节点内的纯文本
+func getNodeText(n *html.Node) string {
+	var text string
+	for child := n.FirstChild; child != nil; child = child.NextSibling {
+		if child.Type == html.TextNode {
+			text += child.Data
+		} else {
+			text += getNodeText(child)
+		}
+	}
+	return text
+}
+
+// 切片去重
+func uniqueSlice(slice []string) []string {
+	seen := make(map[string]struct{})
+	res := make([]string, 0, len(slice))
+	for _, s := range slice {
+		if _, ok := seen[s]; !ok {
+			seen[s] = struct{}{}
+			res = append(res, s)
+		}
+	}
+	return res
 }
 
 func init() {
