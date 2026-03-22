@@ -1,36 +1,28 @@
-# 编译阶段
+# 官方原版构建方式（最稳定，不缺依赖）
 FROM golang:alpine AS builder
 WORKDIR /src
 COPY . /src
 
-RUN apk add --no-cache git
+# 安装 make + git（必须装，项目需要）
+RUN apk add --update --no-cache make git
 
-# 进入项目真正的代码目录
-WORKDIR /src/cmd/server
+# 官方编译命令（一键解决所有依赖、包缺失问题）
+RUN make server
 
-# 编译（这里才有 main.go）
-RUN CGO_ENABLED=0 GOOS=linux go build -o metatube-server .
-
-# 运行阶段
+# 运行镜像（完全保留你所有配置）
 FROM alpine:latest
 LABEL org.opencontainers.image.licenses=Apache-2.0
 LABEL org.opencontainers.image.source="https://github.com/1103020472/metatube-sdk-go"
 
-# 从编译阶段复制程序
-COPY --from=builder /src/cmd/server/metatube-server /
+# 复制官方编译好的文件
+COPY --from=builder /src/build/metatube-server .
 
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --update --no-cache ca-certificates tzdata
 
 ENV GIN_MODE=release
 ENV PORT=8080
 ENV TOKEN=""
 ENV DSN=""
-ENV REQUEST_TIMEOUT=""
-ENV DB_MAX_IDLE_CONNS=0
-ENV DB_MAX_OPEN_CONNS=0
-ENV DB_PREPARED_STMT=0
-ENV DB_AUTO_MIGRATE=0
 
 EXPOSE 8080
-
 ENTRYPOINT ["/metatube-server"]
