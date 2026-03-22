@@ -4,9 +4,11 @@ WORKDIR /src
 COPY . /src
 
 RUN apk add --no-cache git
-RUN go mod tidy
 
-# 关键修复：你的项目必须用 go build . 或者 make 编译
+# 进入项目真正的代码目录
+WORKDIR /src/cmd/server
+
+# 编译（这里才有 main.go）
 RUN CGO_ENABLED=0 GOOS=linux go build -o metatube-server .
 
 # 运行阶段
@@ -14,7 +16,8 @@ FROM alpine:latest
 LABEL org.opencontainers.image.licenses=Apache-2.0
 LABEL org.opencontainers.image.source="https://github.com/1103020472/metatube-sdk-go"
 
-COPY --from=builder /src/metatube-server .
+# 从编译阶段复制程序
+COPY --from=builder /src/cmd/server/metatube-server /
 
 RUN apk add --no-cache ca-certificates tzdata
 
