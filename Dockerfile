@@ -1,21 +1,21 @@
-# 官方原版构建方式（最稳定，不缺依赖）
-FROM golang:alpine AS builder
+# 用完整 golang 镜像，不要用 alpine（你项目依赖必须用完整版）
+FROM golang:1.23 AS builder
+
 WORKDIR /src
 COPY . /src
 
-# 安装 make + git（必须装，项目需要）
-RUN apk add --update --no-cache make git
+# 下载完整依赖
+RUN go mod tidy
 
-# 官方编译命令（一键解决所有依赖、包缺失问题）
-RUN make server
+# 直接编译官方入口（不用make！）
+RUN CGO_ENABLED=0 GOOS=linux go build -o metatube-server ./cmd/server
 
-# 运行镜像（完全保留你所有配置）
+# 运行阶段
 FROM alpine:latest
 LABEL org.opencontainers.image.licenses=Apache-2.0
 LABEL org.opencontainers.image.source="https://github.com/1103020472/metatube-sdk-go"
 
-# 复制官方编译好的文件
-COPY --from=builder /src/build/metatube-server .
+COPY --from=builder /src/metatube-server /
 
 RUN apk add --update --no-cache ca-certificates tzdata
 
