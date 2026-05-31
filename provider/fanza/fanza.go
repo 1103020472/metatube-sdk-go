@@ -776,7 +776,6 @@ func (fz *FANZA) getDigitalMovieReviewsByURL(rawURL string) (reviews []*model.Mo
 		}
 
 		count := len(data.Reviews.Items)
-
 		// 没有更多数据
 		if count == 0 {
 			break
