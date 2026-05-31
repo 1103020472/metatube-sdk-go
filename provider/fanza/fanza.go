@@ -767,7 +767,10 @@ func (fz *FANZA) getDigitalMovieReviewsByURL(rawURL string) (reviews []*model.Mo
 		return
 	}
 
-	const maxReviews = 100
+	const (
+		maxReviews = 100
+		pageSize   = 10
+	)
 
 	for offset := 0; offset < maxReviews; {
 		data, err := fz.videoAPI.GetUserReviews(id, offset)
@@ -776,7 +779,8 @@ func (fz *FANZA) getDigitalMovieReviewsByURL(rawURL string) (reviews []*model.Mo
 		}
 
 		count := len(data.Reviews.Items)
-		// 没有更多数据
+
+		// 没有数据直接结束
 		if count == 0 {
 			break
 		}
@@ -790,17 +794,21 @@ func (fz *FANZA) getDigitalMovieReviewsByURL(rawURL string) (reviews []*model.Mo
 				Date:    dt.Date(review.PublishDate),
 			})
 
-			// 已达到最大数量
+			// 达到最大数量
 			if len(reviews) >= maxReviews {
 				return reviews, nil
 			}
 		}
 
-		// 下一页 offset
+		// 返回不足一页，说明已经是最后一页
+		if count < pageSize {
+			break
+		}
+
 		offset += count
 	}
 
-	return
+	return reviews, nil
 }
 
 func (fz *FANZA) getMonoMovieReviewsByURL(rawURL string) (reviews []*model.MovieReviewDetail, err error) {
