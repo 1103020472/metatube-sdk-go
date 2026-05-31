@@ -767,20 +767,40 @@ func (fz *FANZA) getDigitalMovieReviewsByURL(rawURL string) (reviews []*model.Mo
 		return
 	}
 
-	data, err := fz.videoAPI.GetUserReviews(id)
-	if err != nil {
-		return
+	const maxReviews = 100
+
+	for offset := 0; offset < maxReviews; {
+		data, err := fz.videoAPI.GetUserReviews(id, offset)
+		if err != nil {
+			return nil, err
+		}
+
+		count := len(data.Reviews.Items)
+
+		// 没有更多数据
+		if count == 0 {
+			break
+		}
+
+		for _, review := range data.Reviews.Items {
+			reviews = append(reviews, &model.MovieReviewDetail{
+				Title:   review.Title,
+				Author:  review.Nickname,
+				Comment: review.Comment,
+				Score:   float64(review.Rating),
+				Date:    dt.Date(review.PublishDate),
+			})
+
+			// 已达到最大数量
+			if len(reviews) >= maxReviews {
+				return reviews, nil
+			}
+		}
+
+		// 下一页 offset
+		offset += count
 	}
 
-	for _, review := range data.Reviews.Items {
-		reviews = append(reviews, &model.MovieReviewDetail{
-			Title:   review.Title,
-			Author:  review.Nickname,
-			Comment: review.Comment,
-			Score:   float64(review.Rating),
-			Date:    dt.Date(review.PublishDate),
-		})
-	}
 	return
 }
 
