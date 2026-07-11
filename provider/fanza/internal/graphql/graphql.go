@@ -119,8 +119,7 @@ type TopSearchResponse struct {
 	} `json:"legacySearchPPV"`
 }
 
-// 提取你抓包请求中的核心 GraphQL Query，省略了非必要的 Fragment 减小体积
-const topSearchQuery = `query TopSearch($limit: Int!, $offset: Int, $floor: PPVFloor, $sort: ContentSearchPPVSort!, $queryWord: String, $filter: ContentSearchPPVFilterInput, $legacyProductType: LegacyProductType = DOWNLOAD, $isLoggedIn: Boolean!, $facetLimit: Int!, $hasLegacyProductType: Boolean = false, $excludeUndelivered: Boolean!, $shouldGetBookmark: Boolean!, $isListUiAbTestTarget: Boolean = false, $shouldFetchFanzaClipCount: Boolean!, $guestToken: String!) {
+const topSearchQuery = `query TopSearch($limit: Int!, $offset: Int, $floor: PPVFloor, $sort: ContentSearchPPVSort!, $queryWord: String, $filter: ContentSearchPPVFilterInput, $facetLimit: Int!, $excludeUndelivered: Boolean!) {
   legacySearchPPV(limit: $limit, offset: $offset, floor: $floor, sort: $sort, queryWord: $queryWord, filter: $filter, facetLimit: $facetLimit, includeExplicit: true, excludeUndelivered: $excludeUndelivered) {
     result {
       contents {
@@ -143,21 +142,16 @@ const topSearchQuery = `query TopSearch($limit: Int!, $offset: Int, $floor: PPVF
   }
 }`
 
-// ===== 新增 TopSearch 方法 =====
 func (c *Client) TopSearch(keyword string) (*TopSearchResponse, error) {
 	req := graphql.NewRequest(topSearchQuery)
-	// 根据 curl 对应的请求体设置变量
+
+	// 修复点：移除掉没在 topSearchQuery 里面声明的额外变量，保持纯净
 	req.Var("excludeUndelivered", true)
 	req.Var("facetLimit", 4)
-	req.Var("guestToken", "")
-	req.Var("isListUiAbTestTarget", false)
-	req.Var("isLoggedIn", false)
 	req.Var("limit", 120)
 	req.Var("offset", 0)
 	req.Var("queryWord", keyword)
-	req.Var("shouldFetchFanzaClipCount", false)
-	req.Var("shouldGetBookmark", false)
-	req.Var("sort", "DELIVERY_START_DATE") // 按日期排序
+	req.Var("sort", "DELIVERY_START_DATE")
 
 	req.Header.Set("Referer", videoURL)
 	req.Header.Set("Cache-Control", "no-cache")
