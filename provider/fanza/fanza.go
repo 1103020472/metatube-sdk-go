@@ -630,6 +630,7 @@ func (fz *FANZA) SearchMovie(keyword string) ([]*model.MovieSearchResult, error)
 		videoKeyword = strings.ToLower(keyword)
 	}
 
+	log.Printf("[%s] 传入 Video API 的最终搜索词: %q", fz.Name(), videoKeyword)
 	return fz.searchMovieVideo(videoKeyword)
 }
 
@@ -691,16 +692,28 @@ func (fz *FANZA) searchMovieNext(keyword string) (results []*model.MovieSearchRe
 	return
 }
 
-// 覆盖原有的 searchMovieVideo 方法
 func (fz *FANZA) searchMovieVideo(keyword string) ([]*model.MovieSearchResult, error) {
 	resp, err := fz.videoAPI.TopSearch(keyword)
 	if err != nil {
+		// 排查点 1：请求直接报错了
+		log.Printf("[%s] Video API 请求失败: %v", fz.Name(), err)
 		return nil, err
 	}
 
-	results := make([]*model.MovieSearchResult, 0)
+	// 排查点 2：看看结构体映射有没有成功
+	contents := resp.LegacySearchPPV.Result.Contents
+	log.Printf("[%s] Video API 请求成功，解析到 %d 条结果", fz.Name(), len(contents))
 
-	for _, c := range resp.LegacySearchPPV.Result.Contents {
+	if len(contents) == 0 {
+		// 如果这里是 0，说明要么 DMM 确实没搜到，要么是 graphql client 的 JSON 结构体 tag 没写对导致没映射上
+		log.Printf("[%s] 警告: Video API 返回的内容列表为空！", fz.Name())
+		return nil, nil
+	}
+
+	results := make([]*model.MovieSearchResult, 0)
+	for i, c := range contents {
+		log.Printf("[%s] 解析第 %d 条数据，ID: %s, Title: %s", fz.Name(), i+1, c.ID, c.Title)
+
 		var actors []string
 		for _, act := range c.Actresses {
 			actors = append(actors, act.Name)
@@ -708,7 +721,7 @@ func (fz *FANZA) searchMovieVideo(keyword string) ([]*model.MovieSearchResult, e
 
 		floor := strings.ToLower(c.Floor)
 		if floor == "" {
-			floor = "av" // 兜底默认分区
+			floor = "av"
 		}
 
 		results = append(results, &model.MovieSearchResult{
@@ -725,7 +738,6 @@ func (fz *FANZA) searchMovieVideo(keyword string) ([]*model.MovieSearchResult, e
 		})
 	}
 
-	// 执行与原来相同的排序逻辑
 	fz.sortMovieSearchResults(keyword, results)
 
 	return results, nil
