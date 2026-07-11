@@ -1,0 +1,185 @@
+curl 'https://api.video.dmm.co.jp/graphql' \
+  -H 'accept: application/graphql-response+json, application/graphql+json, application/json, text/event-stream, multipart/mixed' \
+  -H 'accept-language: zh-CN' \
+  -H 'content-type: application/json' \
+  -b 'top_dummy=e6f9eafa-266d-41dc-ab59-2ed7f77772f3; uid=IJgLESbKhXbggQWBxLTN; suid=IJgLESbKhXbggQWBxLTN; i3_ab=72b66b4a-c9df-4aff-b218-82ff3eaab292; _tt_enable_cookie=1; _ttp=01K9GX4ZJFM476VPAYA4Y8M6EK_.tt.2; __lt__cid=c7e7978b-2db4-4489-8c08-b68f9c3bb05a; adpf_uid=xtbIuHjJurlrjnkJ; rieSh3Ee_ga=GA1.1.1799154313.1766759351; FPID=FPID2.3.Rd1Y5Jzz59t0xUoV5kaovymJvi9LxREoZumCV8d%2BKZ0%3D.1766759351; digital[play_volume]=0.5; digital[autoplayer_muted]=0; _yjsu_yjad=1770448811.fc005e07-536b-44e9-8e35-5638c00e8278; rieSh3Ee_ga_KQYE0DE5JW=deleted; ttcsid_D35TCC3C77UFKOQ7GCSG=1772007051383::ODGPIE8B0Qp0pb2AcRd5.12.1772013470078.1; _ga=GA1.3.725894584.1775287511; ckcy=1; is_intarnal=true; age_check_done=1; cto_bundle=1WGNTV9KJTJCJTJGWW5uamlPakFPUWNHUjFvTFdORFk3Uzc2U1FuaFZhUjhxY3VLbDZtOUhjZlFGaVdBNDZiWk00VlA4QjRYNklpWFF2MEViTVVzSnpXS1h5ZjFDJTJGTXVkQzdIZDIwaTRlNEM2VlRXMjhPQWFLR1NzUEd3aiUyRkRhZk52MG1MSENzOFppOW5OeHpLeDlDSSUyQnJOdmh0OXNRJTNEJTNE; sort_search=eyJzb3J0IjoiZGF0ZSIsImxpbWl0IjoiMzAifQ%3D%3D; dig_monthly_history=3%2613dsvr01773%2C3%2613dsvr01745%2C3%2613dsvr01764%2C3%26mdvr00308%2C3%26ipvr00047%2C3%26ipvr00009; _gcl_au=1.1.1966417511.1783151936; dig_history=mdvr00421%2C13dsvr01996%2C13dsvr01994%2C13dsvr02000%2C13dsvr01968%2C13dsvr01987%2Cpxvr00447%2C13dsvr01991%2Curvrsp00293%2Cgunm00048%2C13dsvr01746%2C13dsvr01737%2Ch_1248kiwvr00344%2Cmdvr00346%2Ckavr00233%2Cnkkvr00172%2Cnkkvr00169%2Ckavr00230%2Cbibivr00160%2Ccrvr00417%2Curvrsp00427%2Csavr00559%2Csavr00433%2Csavr01012%2Caquco00071%2Cpxvrg00003%2Cvrkm01818%2C13dsvr01761%2Ckiwvr00859%2Ckiwvr00415%2Csavr00225%2Ch_955fsvr00023%2Csivr00176%2Cvrkm00886%2Ch_1266jnob00021%2Cvrkm01471%2C13dsvr01585%2Curvrsp00434%2Ckiwvr00391%2Ckavr00459; ixd_lastclick=6828,1783152480; FPAU=1.1.1966417511.1783151936; rcmd_ab=c62bdbef-1303-4337-b350-bd3e3517e9a5; netgame_tracking_id=HkMDDFNUBQQKBFBZUldQBwNcDgBUCF0KB1YAAgMGDwNdUglYU1dSA1kEAwkFBV5SAgMDBgIOVVhbAABSA1UPA1NSEgNEAgNTDlUHAQEHVlZYUQ4FVAtdDlAAAlEEAVJRV1BSCgQPVlFcA1dbUAZeDgNXAlQIWldcW1IEXlMGUwVQVVJYBxQc; games_segment_session_id=57bb4882-79ee-4901-b894-2eba6fe8e59a; __lt__sid=4c49efee-0e9e0788; FPLC=xkxGOBNpWQxAuh53njZePoBosf99e8H4xd9En5%2B52Oyfts%2BZvup9desWj04Nf8jpPuFSkWsCMzLOBzRyL4ea1v8IAilhER0CSKv2%2FEVba0f0wfJGecTDPIDgqq%2FqyA%3D%3D; top_pv_uid=9598997d-8d2c-4655-ad69-09df5f095d8b; _clck=15k8zle%5E2%5Eg7n%5E0%5E2187; _clsk=99or39%5E1783728784304%5E1%5E1%5Er.clarity.ms%2Fcollect; FPGSID=1.1783728764.1783729169.G-KQYE0DE5JW.pVq3nvhVkBEADcMEC70mnQ; ttcsid=1783728765285::-5GO5Lm_b8nkNrz5dHTS.94.1783729203961.0::1.216259.217594::438670.6.622.72::0.0.0; ttcsid_CD36583C77UFSQD45A5G=1783728765285::wWhYEPp2qBtO65fEORVy.94.1783729203961.1; rieSh3Ee_ga_KQYE0DE5JW=GS2.1.s1783728765$o36$g1$t1783729203$j27$l0$h2017956006' \
+  -H 'fanza-device: BROWSER' \
+  -H 'origin: https://video.dmm.co.jp' \
+  -H 'priority: u=1, i' \
+  -H 'referer: https://video.dmm.co.jp/' \
+  -H 'sec-ch-ua: "Not;A=Brand";v="8", "Chromium";v="150", "Google Chrome";v="150"' \
+  -H 'sec-ch-ua-mobile: ?0' \
+  -H 'sec-ch-ua-platform: "Windows"' \
+  -H 'sec-fetch-dest: empty' \
+  -H 'sec-fetch-mode: cors' \
+  -H 'sec-fetch-site: same-site' \
+  -H 'user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36' \
+  --data-raw $'{"operationName":"TopSearch","query":"query TopSearch($limit: Int\u0021, $offset: Int, $floor: PPVFloor, $sort: ContentSearchPPVSort\u0021, $queryWord: String, $filter: ContentSearchPPVFilterInput, $legacyProductType: LegacyProductType = DOWNLOAD, $isLoggedIn: Boolean\u0021, $facetLimit: Int\u0021, $hasLegacyProductType: Boolean = false, $excludeUndelivered: Boolean\u0021, $shouldGetBookmark: Boolean\u0021, $isListUiAbTestTarget: Boolean = false, $shouldFetchFanzaClipCount: Boolean\u0021, $guestToken: String\u0021) {\\n  legacySearchPPV(\\n    limit: $limit\\n    offset: $offset\\n    floor: $floor\\n    sort: $sort\\n    queryWord: $queryWord\\n    filter: $filter\\n    facetLimit: $facetLimit\\n    includeExplicit: true\\n    excludeUndelivered: $excludeUndelivered\\n  ) {\\n    result {\\n      contents {\\n        ...searchContent\\n        floor\\n        contentType\\n        actresses {\\n          id\\n          name\\n          __typename\\n        }\\n        maker {\\n          id\\n          name\\n          __typename\\n        }\\n        amateurActress {\\n          bustCup\\n          bust\\n          waist\\n          hip\\n          age\\n          height\\n          __typename\\n        }\\n        isInWishList @include(if: $shouldGetBookmark)\\n        __typename\\n      }\\n      facet {\\n        floor {\\n          items {\\n            floor\\n            count\\n            __typename\\n          }\\n          __typename\\n        }\\n        __typename\\n      }\\n      pageInfo {\\n        ...paginationFragment\\n        __typename\\n      }\\n      isNoIndex\\n      fanzaClipCount @include(if: $shouldFetchFanzaClipCount)\\n      __typename\\n    }\\n    __typename\\n  }\\n}\\nfragment searchContent on PPVContentSearchContent {\\n  id\\n  title\\n  packageImage {\\n    mediumUrl\\n    largeUrl\\n    __typename\\n  }\\n  sampleImages {\\n    number\\n    largeUrl\\n    __typename\\n  }\\n  sampleMovie {\\n    hlsUrl\\n    mp4Url\\n    vrUrl\\n    __typename\\n  }\\n  releaseStatus\\n  review {\\n    average\\n    count\\n    __typename\\n  }\\n  isExclusiveDelivery\\n  bookmarkCount\\n  salesInfo {\\n    lowestPrice {\\n      productId\\n      price\\n      discountPrice\\n      legacyProductType\\n      __typename\\n    }\\n    priceByLegacyProductType(legacyProductType: $legacyProductType) @include(if: $hasLegacyProductType) {\\n      discountPrice\\n      price\\n      legacyProductType\\n      __typename\\n    }\\n    campaign {\\n      name\\n      endAt\\n      discountRate @include(if: $isListUiAbTestTarget)\\n      __typename\\n    }\\n    pointRewardCampaign {\\n      name\\n      __typename\\n    }\\n    hasMultiplePrices\\n    __typename\\n  }\\n  isOnSale\\n  deliveryStartAt\\n  utilizationStatus @include(if: $isLoggedIn)\\n  isInBasket @include(if: $isLoggedIn)\\n  isInGuestBasket(token: $guestToken)\\n  __typename\\n}\\nfragment paginationFragment on OffsetPageInfoWithTotal {\\n  offset\\n  limit\\n  hasNext\\n  totalCount\\n  __typename\\n}","variables":{"excludeUndelivered":true,"facetLimit":4,"guestToken":"","isListUiAbTestTarget":false,"isLoggedIn":false,"limit":120,"offset":0,"queryWord":"mdvr00421","shouldFetchFanzaClipCount":false,"shouldGetBookmark":false,"sort":"DELIVERY_START_DATE"}}'
+
+
+  响应：
+  {
+      "data": {
+          "legacySearchPPV": {
+              "result": {
+                  "contents": [
+                      {
+                          "id": "mdvr00421",
+                          "title": "【VR】付き合った当時は教師と生徒だった…でもあれから5年、結婚した僕たちは倦怠期を迎えている。教え子に告白された話をすると「やっぱり制服着てる若い女の子がいいんでしょ…」嫉妬したさくらが可愛すぎる！違うんだ、妻の制服姿が世界でいっちばん好… 水卜さくら",
+                          "packageImage": {
+                              "mediumUrl": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/mdvr00421/mdvr00421ps.jpg",
+                              "largeUrl": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/mdvr00421/mdvr00421pl.jpg",
+                              "__typename": "ContentSearchPackageImage"
+                          },
+                          "sampleImages": [
+                              {
+                                  "number": 1,
+                                  "largeUrl": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/mdvr00421/mdvr00421jp-1.jpg",
+                                  "__typename": "ContentSearchSampleImage"
+                              },
+                              {
+                                  "number": 2,
+                                  "largeUrl": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/mdvr00421/mdvr00421jp-2.jpg",
+                                  "__typename": "ContentSearchSampleImage"
+                              },
+                              {
+                                  "number": 3,
+                                  "largeUrl": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/mdvr00421/mdvr00421jp-3.jpg",
+                                  "__typename": "ContentSearchSampleImage"
+                              },
+                              {
+                                  "number": 4,
+                                  "largeUrl": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/mdvr00421/mdvr00421jp-4.jpg",
+                                  "__typename": "ContentSearchSampleImage"
+                              },
+                              {
+                                  "number": 5,
+                                  "largeUrl": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/mdvr00421/mdvr00421jp-5.jpg",
+                                  "__typename": "ContentSearchSampleImage"
+                              },
+                              {
+                                  "number": 6,
+                                  "largeUrl": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/mdvr00421/mdvr00421jp-6.jpg",
+                                  "__typename": "ContentSearchSampleImage"
+                              },
+                              {
+                                  "number": 7,
+                                  "largeUrl": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/mdvr00421/mdvr00421jp-7.jpg",
+                                  "__typename": "ContentSearchSampleImage"
+                              },
+                              {
+                                  "number": 8,
+                                  "largeUrl": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/mdvr00421/mdvr00421jp-8.jpg",
+                                  "__typename": "ContentSearchSampleImage"
+                              },
+                              {
+                                  "number": 9,
+                                  "largeUrl": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/mdvr00421/mdvr00421jp-9.jpg",
+                                  "__typename": "ContentSearchSampleImage"
+                              },
+                              {
+                                  "number": 10,
+                                  "largeUrl": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/mdvr00421/mdvr00421jp-10.jpg",
+                                  "__typename": "ContentSearchSampleImage"
+                              },
+                              {
+                                  "number": 11,
+                                  "largeUrl": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/mdvr00421/mdvr00421jp-11.jpg",
+                                  "__typename": "ContentSearchSampleImage"
+                              },
+                              {
+                                  "number": 12,
+                                  "largeUrl": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/mdvr00421/mdvr00421jp-12.jpg",
+                                  "__typename": "ContentSearchSampleImage"
+                              },
+                              {
+                                  "number": 13,
+                                  "largeUrl": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/mdvr00421/mdvr00421jp-13.jpg",
+                                  "__typename": "ContentSearchSampleImage"
+                              },
+                              {
+                                  "number": 14,
+                                  "largeUrl": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/mdvr00421/mdvr00421jp-14.jpg",
+                                  "__typename": "ContentSearchSampleImage"
+                              },
+                              {
+                                  "number": 15,
+                                  "largeUrl": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/mdvr00421/mdvr00421jp-15.jpg",
+                                  "__typename": "ContentSearchSampleImage"
+                              }
+                          ],
+                          "sampleMovie": {
+                              "hlsUrl": null,
+                              "mp4Url": null,
+                              "vrUrl": "https://www.dmm.co.jp/digital/-/vr-sample-player/=/cid=mdvr00421/",
+                              "__typename": "ContentSearchSampleMovie"
+                          },
+                          "releaseStatus": "LATEST_RELEASE",
+                          "review": {
+                              "average": 4.5,
+                              "count": 4,
+                              "__typename": "ContentSearchReview"
+                          },
+                          "isExclusiveDelivery": true,
+                          "bookmarkCount": 2645,
+                          "salesInfo": {
+                              "lowestPrice": {
+                                  "productId": "mdvr00421dl",
+                                  "price": 1480,
+                                  "discountPrice": null,
+                                  "legacyProductType": "DOWNLOAD",
+                                  "__typename": "ContentSearchPrice"
+                              },
+                              "campaign": null,
+                              "pointRewardCampaign": null,
+                              "hasMultiplePrices": true,
+                              "__typename": "ContentSearchSalesInfo"
+                          },
+                          "isOnSale": true,
+                          "deliveryStartAt": "2026-06-15T00:00:00+09:00",
+                          "isInGuestBasket": false,
+                          "__typename": "PPVContentSearchContent",
+                          "floor": "AV",
+                          "contentType": "VR",
+                          "actresses": [
+                              {
+                                  "id": "1038706",
+                                  "name": "水卜さくら",
+                                  "__typename": "ContentSearchActress"
+                              }
+                          ],
+                          "maker": {
+                              "id": "1509",
+                              "name": "ムーディーズ",
+                              "__typename": "ContentSearchMaker"
+                          },
+                          "amateurActress": null
+                      }
+                  ],
+                  "facet": {
+                      "floor": {
+                          "items": [
+                              {
+                                  "floor": "AV",
+                                  "count": 1,
+                                  "__typename": "FloorFacetItem"
+                              }
+                          ],
+                          "__typename": "FloorFacet"
+                      },
+                      "__typename": "PPVContentSearchFacet"
+                  },
+                  "pageInfo": {
+                      "offset": 0,
+                      "limit": 120,
+                      "hasNext": false,
+                      "totalCount": 1,
+                      "__typename": "OffsetPageInfoWithTotal"
+                  },
+                  "isNoIndex": false,
+                  "__typename": "PPVContentSearchResult"
+              },
+              "__typename": "PPVContentSearchResponse"
+          }
+      }
+  }

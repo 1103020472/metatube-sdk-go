@@ -600,18 +600,37 @@ func (fz *FANZA) NormalizeMovieKeyword(keyword string) string {
 	return strings.ToLower(keyword) /* FANZA prefers lowercase */
 }
 
+// 覆盖原有的 SearchMovie 方法
 func (fz *FANZA) SearchMovie(keyword string) ([]*model.MovieSearchResult, error) {
+	var results []*model.MovieSearchResult
+	var err error
+
+	// ① 尝试原来的 DMM 网页搜索
+	// 将带 `-` 的番号（如 MDVR-421）转为 MDVR00421# 并搜索
 	if strings.Contains(keyword, "-") {
-		if results, err := fz.searchMovieNext(strings.Replace(keyword,
-			/* FANZA cannot search hyphened number */
-			"-", "00", 1) +
-			/* Add a `#` sign to distinguish 001 style number */
-			"#"); err == nil && len(results) > 0 {
+		results, err = fz.searchMovieNext(strings.Replace(keyword, "-", "00", 1) + "#")
+		if err == nil && len(results) > 0 {
 			return results, nil
 		}
 	}
-	// fallback to normal dvd search.
-	return fz.searchMovieNext(strings.Replace(keyword, "-", "", 1))
+
+	// ② 尝试原来的 DMM 网页搜索兜底 (直接移除 `-`)
+	results, err = fz.searchMovieNext(strings.Replace(keyword, "-", "", 1))
+	if err == nil && len(results) > 0 {
+		return results, nil
+	}
+
+	// ③ 降级走 video.dmm.co.jp 的 API 搜索
+	// 根据 FANZA 习惯，通常使用 00 替代 `-` 来发起精确请求
+	log.Printf("[%s] 网页搜索未找到结果，降级使用 Video GraphQL API 搜索: %s", fz.Name(), keyword)
+	videoKeyword := keyword
+	if strings.Contains(keyword, "-") {
+		videoKeyword = strings.Replace(strings.ToLower(keyword), "-", "00", 1)
+	} else {
+		videoKeyword = strings.ToLower(keyword)
+	}
+
+	return fz.searchMovieVideo(videoKeyword)
 }
 
 func (fz *FANZA) searchMovieNext(keyword string) (results []*model.MovieSearchResult, err error) {
@@ -670,6 +689,46 @@ func (fz *FANZA) searchMovieNext(keyword string) (results []*model.MovieSearchRe
 		})
 	}
 	return
+}
+
+// 覆盖原有的 searchMovieVideo 方法
+func (fz *FANZA) searchMovieVideo(keyword string) ([]*model.MovieSearchResult, error) {
+	resp, err := fz.videoAPI.TopSearch(keyword)
+	if err != nil {
+		return nil, err
+	}
+
+	results := make([]*model.MovieSearchResult, 0)
+
+	for _, c := range resp.LegacySearchPPV.Result.Contents {
+		var actors []string
+		for _, act := range c.Actresses {
+			actors = append(actors, act.Name)
+		}
+
+		floor := strings.ToLower(c.Floor)
+		if floor == "" {
+			floor = "av" // 兜底默认分区
+		}
+
+		results = append(results, &model.MovieSearchResult{
+			ID:          c.ID,
+			Number:      ParseNumber(c.ID),
+			Title:       c.Title,
+			Provider:    fz.Name(),
+			Homepage:    fmt.Sprintf("https://video.dmm.co.jp/%s/content/?id=%s", floor, c.ID),
+			ThumbURL:    c.PackageImage.MediumUrl,
+			CoverURL:    c.PackageImage.LargeUrl,
+			Score:       c.Review.Average,
+			ReleaseDate: parser.ParseDate(c.DeliveryStartAt),
+			Actors:      actors,
+		})
+	}
+
+	// 执行与原来相同的排序逻辑
+	fz.sortMovieSearchResults(keyword, results)
+
+	return results, nil
 }
 
 // Deprecated: this function is deprecated.

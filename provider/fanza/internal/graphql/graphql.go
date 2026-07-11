@@ -94,3 +94,79 @@ func (c *Client) GetUserReviews(id string, offset ...int) (*UserReviewsResponse,
 
 	return &resp, nil
 }
+
+// ===== 补充 TopSearch 响应体结构 =====
+type TopSearchResponse struct {
+	LegacySearchPPV struct {
+		Result struct {
+			Contents []struct {
+				ID           string `json:"id"`
+				Title        string `json:"title"`
+				Floor        string `json:"floor"`
+				PackageImage struct {
+					MediumUrl string `json:"mediumUrl"`
+					LargeUrl  string `json:"largeUrl"`
+				} `json:"packageImage"`
+				Review struct {
+					Average float64 `json:"average"`
+				} `json:"review"`
+				DeliveryStartAt string `json:"deliveryStartAt"`
+				Actresses       []struct {
+					Name string `json:"name"`
+				} `json:"actresses"`
+			} `json:"contents"`
+		} `json:"result"`
+	} `json:"legacySearchPPV"`
+}
+
+// 提取你抓包请求中的核心 GraphQL Query，省略了非必要的 Fragment 减小体积
+const topSearchQuery = `query TopSearch($limit: Int!, $offset: Int, $floor: PPVFloor, $sort: ContentSearchPPVSort!, $queryWord: String, $filter: ContentSearchPPVFilterInput, $legacyProductType: LegacyProductType = DOWNLOAD, $isLoggedIn: Boolean!, $facetLimit: Int!, $hasLegacyProductType: Boolean = false, $excludeUndelivered: Boolean!, $shouldGetBookmark: Boolean!, $isListUiAbTestTarget: Boolean = false, $shouldFetchFanzaClipCount: Boolean!, $guestToken: String!) {
+  legacySearchPPV(limit: $limit, offset: $offset, floor: $floor, sort: $sort, queryWord: $queryWord, filter: $filter, facetLimit: $facetLimit, includeExplicit: true, excludeUndelivered: $excludeUndelivered) {
+    result {
+      contents {
+        id
+        title
+        floor
+        packageImage {
+          mediumUrl
+          largeUrl
+        }
+        review {
+          average
+        }
+        deliveryStartAt
+        actresses {
+          name
+        }
+      }
+    }
+  }
+}`
+
+// ===== 新增 TopSearch 方法 =====
+func (c *Client) TopSearch(keyword string) (*TopSearchResponse, error) {
+	req := graphql.NewRequest(topSearchQuery)
+	// 根据 curl 对应的请求体设置变量
+	req.Var("excludeUndelivered", true)
+	req.Var("facetLimit", 4)
+	req.Var("guestToken", "")
+	req.Var("isListUiAbTestTarget", false)
+	req.Var("isLoggedIn", false)
+	req.Var("limit", 120)
+	req.Var("offset", 0)
+	req.Var("queryWord", keyword)
+	req.Var("shouldFetchFanzaClipCount", false)
+	req.Var("shouldGetBookmark", false)
+	req.Var("sort", "DELIVERY_START_DATE") // 按日期排序
+
+	req.Header.Set("Referer", videoURL)
+	req.Header.Set("Cache-Control", "no-cache")
+	req.Header.Set("Fanza-Device", "BROWSER")
+
+	var resp TopSearchResponse
+	if err := c.gc.Run(context.Background(), req, &resp); err != nil {
+		return nil, err
+	}
+
+	return &resp, nil
+}
