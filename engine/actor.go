@@ -4,7 +4,9 @@ import (
 	goerr "errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/text/language"
 	"gorm.io/gorm/clause"
@@ -113,26 +115,53 @@ func (e *Engine) SearchActor(keyword, name string, fallback bool) ([]*model.Acto
 }
 
 func (e *Engine) SearchActorAll(keyword string, fallback bool) (results []*model.ActorSearchResult, err error) {
-	var (
-		mu sync.Mutex
-		wg sync.WaitGroup
-	)
+	type response struct {
+		Results  []*model.ActorSearchResult
+		Error    error
+		Provider mt.ActorProvider
+		Duration time.Duration
+	}
+	respCh := make(chan response)
+
+	var wg sync.WaitGroup
 	for _, provider := range e.actorProviders.Iterator() {
 		wg.Add(1)
+		// Goroutine started time.
+		startTime := time.Now()
 		go func(provider mt.ActorProvider) {
 			defer wg.Done()
-			if innerResults, innerErr := e.searchActor(keyword, provider, fallback); innerErr == nil {
-				for _, result := range innerResults {
-					if result.IsValid() /* validation check */ {
-						mu.Lock()
-						results = append(results, result)
-						mu.Unlock()
-					}
-				}
-			} // ignore error
+			innerResults, innerErr := e.searchActor(keyword, provider, fallback)
+			respCh <- response{
+				Results:  innerResults,
+				Error:    innerErr,
+				Provider: provider,
+				Duration: time.Since(startTime),
+			}
 		}(provider)
 	}
-	wg.Wait()
+	go func() {
+		wg.Wait()
+		// notify when all searching tasks done.
+		close(respCh)
+	}()
+
+	ds := make([]string, 0, e.actorProviders.Len())
+	for resp := range respCh {
+		if resp.Error != nil {
+			ds = append(ds, fmt.Sprintf("%s(%s):<%v>", resp.Provider.Name(), resp.Duration, resp.Error))
+			continue
+		}
+		var valid int
+		for _, result := range resp.Results {
+			if result.IsValid() /* validation check */ {
+				results = append(results, result)
+				valid++
+			}
+		}
+		ds = append(ds, fmt.Sprintf("%s(%s):%d", resp.Provider.Name(), resp.Duration, valid))
+	}
+
+	e.logger.Printf("Search actor %s: %s", keyword, strings.Join(ds, " | "))
 
 	sort.SliceStable(results, func(i, j int) bool {
 		return e.MustGetActorProviderByName(results[i].Provider).Priority() >
