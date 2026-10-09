@@ -273,7 +273,8 @@ func (avl *AVLeague) searchAvLeagueActor(keyword string) (results []*model.Actor
 }
 
 // searchWikiActor 从 av-wiki 搜索演员（av-league 搜不到时的来源）。
-// 返回以 av-wiki slug 为 ID、av-wiki 地址为 Homepage 的结果。
+// 返回以 av-wiki slug 为 ID、av-wiki 地址为 Homepage 的结果，
+// 头像取自演员详情页（av-wiki 的搜索结果列表只有作品图，没有演员头像）。
 func (avl *AVLeague) searchWikiActor(keyword string) (results []*model.ActorSearchResult, err error) {
 	info, err := avl.fetchActorInfoFromWiki(keyword)
 	if err != nil {
@@ -284,6 +285,7 @@ func (avl *AVLeague) searchWikiActor(keyword string) (results []*model.ActorSear
 		Name:     info.Name,
 		Provider: avl.Name(),
 		Homepage: info.Homepage,
+		Images:   info.Images,
 	}}, nil
 }
 
