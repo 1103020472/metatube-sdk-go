@@ -97,6 +97,14 @@ type ProxySetter interface {
 	SetProxy(proxyURL string) error
 }
 
+// ExtraHostsProvider is implemented by providers that also serve content
+// from hostnames other than their base URL host. The engine registers
+// these hosts so that URLs pointing to them route back to the provider.
+type ExtraHostsProvider interface {
+	// ExtraHosts returns additional hostnames (without scheme, port optional).
+	ExtraHosts() []string
+}
+
 type Config interface {
 	Has(string) bool
 	GetString(string) (string, error)

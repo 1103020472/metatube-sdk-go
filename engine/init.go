@@ -3,6 +3,7 @@ package engine
 import (
 	"log"
 	"os"
+	"strings"
 
 	"github.com/1103020472/metatube-sdk-go/common/fetch"
 	mt "github.com/1103020472/metatube-sdk-go/provider"
@@ -45,11 +46,21 @@ func (e *Engine) initActorProviders() {
 		// Add actor provider by name.
 		e.actorProviders.Set(name, provider)
 		// Add actor provider by host.
-		host := provider.URL().Hostname()
-		e.actorHostProviders.Set(host,
-			append(e.actorHostProviders.
-				GetOrDefault(host, nil), provider))
+		e.addActorHost(provider.URL().Hostname(), provider)
+		// Add any extra hosts declared by the provider.
+		if hp, ok := provider.(mt.ExtraHostsProvider); ok {
+			for _, extraHost := range hp.ExtraHosts() {
+				e.addActorHost(strings.ToLower(strings.TrimSpace(extraHost)), provider)
+			}
+		}
 	}
+}
+
+// addActorHost registers an actor provider under the given host.
+func (e *Engine) addActorHost(host string, provider mt.ActorProvider) {
+	e.actorHostProviders.Set(host,
+		append(e.actorHostProviders.
+			GetOrDefault(host, nil), provider))
 }
 
 // initMovieProviders initializes movie providers.

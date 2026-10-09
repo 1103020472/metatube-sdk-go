@@ -16,6 +16,16 @@ func TestAVLeague_GetActorInfoByID(t *testing.T) {
 	})
 }
 
+func TestAVLeague_GetActorInfoByURL(t *testing.T) {
+	testkit.Test(t, New, []string{
+		// av-league 演员页：Twitter / Instagram 取自超链接，
+		// 并合并 av-wiki 的简介（summary）。
+		"https://www.av-league.com/actress/8301.html",
+		// av-wiki 演员页（av-league 没有的演员）。
+		"https://av-wiki.net/av-actress/minaduki-hikaru/",
+	})
+}
+
 func TestAVLeague_SearchActor(t *testing.T) {
 	testkit.Test(t, New, []string{
 		"白川ゆず",
