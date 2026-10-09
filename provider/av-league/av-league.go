@@ -564,8 +564,32 @@ func parseWikiAliases(s string) []string {
 	return aliases
 }
 
-// parseWikiSize 解析 av-wiki「サイズ」，形如 T159-B83-W57-H88（数值可能含小数）。
-// T=身高，B=胸围，W=腰围，H=臀围。
+// wikiCupRe 匹配「サイズ」里跟在 B 值后面的罩杯（部分演员才公布）：
+// Dカップ / D / （Ｆカップ）/ AAカップ。
+var wikiCupRe = regexp.MustCompile(`[（(]\s*([A-Za-zＡ-Ｚａ-ｚ]{1,2})\s*(?:カップ)?\s*[）)]`)
+
+// normalizeWikiCup 罩杯统一成半角大写（页面偶尔会用全角字母写罩杯）。
+func normalizeWikiCup(cup string) string {
+	return strings.ToUpper(strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'Ａ' && r <= 'Ｚ':
+			return r - 'Ａ' + 'A'
+		case r >= 'ａ' && r <= 'ｚ':
+			return r - 'ａ' + 'a'
+		default:
+			return r
+		}
+	}, cup))
+}
+
+// parseWikiSize 解析 av-wiki「サイズ」，形如：
+//
+//	T159-B83-W57-H88
+//	T160cm B84cm(Dカップ) W56cm H88cm
+//	T160-B88(F)-W54-H92
+//
+// T=身高，B=胸围，W=腰围，H=臀围（数值可能含小数、可能带 cm、可能是「〇」占位），
+// 罩杯（仅部分演员公布）写在 B 值后面的括号里，可能带「カップ」后缀。
 func parseWikiSize(s string, info *model.ActorInfo) {
 	re := regexp.MustCompile(`([TBWH])\s*(\d+(?:\.\d+)?)`)
 	var height, b, w, h float64
@@ -593,6 +617,9 @@ func parseWikiSize(s string, info *model.ActorInfo) {
 			return strconv.Itoa(int(v + 0.5))
 		}
 		info.Measurements = fmt.Sprintf("B:%s / W:%s / H:%s", f(b), f(w), f(h))
+	}
+	if m := wikiCupRe.FindStringSubmatch(s); len(m) == 2 {
+		info.CupSize = normalizeWikiCup(m[1])
 	}
 }
 
