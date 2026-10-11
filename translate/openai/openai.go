@@ -38,13 +38,10 @@ type OpenAI struct {
 	APIUrl string `json:"openai-api-url"`
 	Model  string `json:"openai-model"`
 	Prompt string `json:"openai-prompt"`
-	// ExtraParams is a raw JSON object merged into the chat completion
-	// request body. Different OpenAI-compatible gateways need different
-	// switches to curb reasoning, e.g.
-	//   SiliconFlow: {"thinking_budget": 1}   (enable_thinking:false is ignored)
-	//   Zhipu:       {"thinking": {"type": "disabled"}}
-	//   vLLM/Qwen:   {"chat_template_kwargs": {"enable_thinking": false}}
-	ExtraParams string `json:"openai-extra-params"`
+	// DisableThinking turns off the reasoning/thinking mode for models
+	// that support it (e.g. GLM, Qwen). It injects
+	// "thinking": {"type": "disabled"} into the request body.
+	DisableThinking bool `json:"openai-disable-thinking"`
 	// MaxCompletionTokens bounds the number of generated tokens. Values
 	// <= 0 fall back to DefaultMaxCompletionTokens.
 	MaxCompletionTokens int `json:"openai-max-completion-tokens"`
@@ -55,15 +52,8 @@ func (oa *OpenAI) Translate(q, source, target string) (result string, err error)
 	if oa.APIUrl != "" {
 		config.BaseURL = oa.APIUrl
 	}
-
-	var extra map[string]json.RawMessage
-	if strings.TrimSpace(oa.ExtraParams) != "" {
-		if err = json.Unmarshal([]byte(oa.ExtraParams), &extra); err != nil {
-			return "", fmt.Errorf("openai: invalid extra params JSON: %w", err)
-		}
-		if len(extra) > 0 {
-			config.HTTPClient = &bodyPatchClient{inner: config.HTTPClient, extra: extra}
-		}
+	if oa.DisableThinking {
+		config.HTTPClient = &thinkingDisabledClient{inner: config.HTTPClient}
 	}
 
 	maxCompletionTokens := oa.MaxCompletionTokens
@@ -110,17 +100,15 @@ func (oa *OpenAI) Translate(q, source, target string) (result string, err error)
 	return resp.Choices[0].Message.Content, nil
 }
 
-// bodyPatchClient merges extra JSON fields into the outgoing request body.
-// go-openai's ChatCompletionRequest has no generic extension field, so
-// vendor-specific switches (enable_thinking, thinking, ...) are injected
-// on the wire instead.
-type bodyPatchClient struct {
+// thinkingDisabledClient injects the vendor-specific "thinking" switch into
+// the JSON request body. go-openai's ChatCompletionRequest has no generic
+// extension field, so the body is patched on the wire instead.
+type thinkingDisabledClient struct {
 	inner openai.HTTPDoer
-	extra map[string]json.RawMessage
 }
 
-func (c *bodyPatchClient) Do(req *http.Request) (*http.Response, error) {
-	if req.Body == nil {
+func (c *thinkingDisabledClient) Do(req *http.Request) (*http.Response, error) {
+	if req.Body == nil || req.Header.Get("Content-Type") != "application/json" {
 		return c.inner.Do(req)
 	}
 
@@ -138,14 +126,11 @@ func (c *bodyPatchClient) Do(req *http.Request) (*http.Response, error) {
 		return c.inner.Do(req)
 	}
 
-	// Never overwrite a field the request already set explicitly.
-	for key, value := range c.extra {
-		if _, exists := payload[key]; !exists {
-			payload[key] = value
+	if _, exists := payload["thinking"]; !exists {
+		payload["thinking"] = json.RawMessage(`{"type":"disabled"}`)
+		if body, err = json.Marshal(payload); err != nil {
+			return nil, err
 		}
-	}
-	if body, err = json.Marshal(payload); err != nil {
-		return nil, err
 	}
 
 	req.Body = io.NopCloser(bytes.NewReader(body))
