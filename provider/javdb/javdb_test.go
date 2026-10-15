@@ -1,6 +1,7 @@
 package javdb
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -11,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/1103020472/metatube-sdk-go/internal/envconfig"
+	"github.com/1103020472/metatube-sdk-go/model"
 	"github.com/1103020472/metatube-sdk-go/provider/internal/testkit"
 )
 
@@ -22,6 +24,9 @@ func TestJavDB_GetMovieInfoByID(t *testing.T) {
 		// Movie numbers, resolved through search.
 		"IPVR-328",
 		"SSIS-001",
+		"MDVR-411",
+		// JavDB lists this one as "LUXU-1234".
+		"259LUXU-1234",
 	})
 }
 
@@ -37,6 +42,8 @@ func TestJavDB_SearchMovie(t *testing.T) {
 		"IPVR-328",
 		"SSIS-001",
 		"3DSVR00123",
+		"MDVR-411",
+		"259LUXU-1234",
 	})
 }
 
@@ -87,6 +94,127 @@ func TestJavDBNormalizeNumber(t *testing.T) {
 	assert.Equal(t, "IPVR328", normalizeNumber("ipvr-328"))
 	assert.Equal(t, "IPVR328", normalizeNumber("IPVR_328"))
 	assert.Equal(t, "3DSVR123", normalizeNumber("3DSVR-123"))
+}
+
+func TestJavDBTrailingDigits(t *testing.T) {
+	assert.Equal(t, "1234", trailingDigits("LUXU-1234"))
+	assert.Equal(t, "1234", trailingDigits("259LUXU-1234"))
+	assert.Equal(t, "1234567", trailingDigits("FC2-PPV-1234567"))
+	assert.Equal(t, "123", trailingDigits("3DSVR00123"))
+	assert.Equal(t, "0", trailingDigits("HEYZO-000"))
+	assert.Equal(t, "", trailingDigits("MDVR"))
+}
+
+func TestJavDBLettersOnly(t *testing.T) {
+	assert.Equal(t, "FCPPV", lettersOnly("FC2-PPV-1234567"))
+	assert.Equal(t, "LUXU", lettersOnly("259LUXU-1234"))
+	assert.Equal(t, "MDVR", lettersOnly("mdvr-411"))
+	assert.Equal(t, "", lettersOnly("123-456"))
+}
+
+func TestJavDBSameNumber(t *testing.T) {
+	for _, tt := range []struct {
+		a, b  string
+		match bool
+	}{
+		{`MDVR-411`, `MDVR-411`, true},
+		{`mdvr-411`, `MDVR411`, true},
+		{`3DSVR00123`, `DSVR-123`, true},
+		// JavDB drops some label prefixes.
+		{`259LUXU-1234`, `LUXU-1234`, true},
+		{`FC2-PPV-1234567`, `FC2-1234567`, true},
+		// JavDB's fuzzy neighbours must not match.
+		{`MDVR-411`, `MDVR-441`, false},
+		{`MDVR-411`, `MDVR-419`, false},
+		{`SSIS-001`, `SSIS-101`, false},
+		{`259LUXU-1234`, `LUXU-1230`, false},
+		{`FC2-PPV-1234567`, `FC2-1234560`, false},
+		{`MDVR-411`, `MIDA-411`, false},
+	} {
+		assert.Equal(t, tt.match, sameNumber(tt.a, tt.b), "%s vs %s", tt.a, tt.b)
+		assert.Equal(t, tt.match, sameNumber(tt.b, tt.a), "%s vs %s", tt.b, tt.a)
+	}
+}
+
+func TestJavDBFullNumberRegexp(t *testing.T) {
+	for _, s := range []string{
+		"MDVR-411", "MDVR411", "SSIS-001", "IPVR328",
+		"259LUXU-1234", "FC2-PPV-1234567", "DSVR-123", "TOKYO-HOT-1234",
+	} {
+		assert.True(t, fullNumberRegexp.MatchString(s), s)
+	}
+	// Titles must never be treated as a movie number.
+	for _, s := range []string{
+		"", "MDVR", "2SEX", "M男専用大人保育園", "SSIS-001 エロ配信",
+		"本田岬", "259LUXU", "MDVR-",
+	} {
+		assert.False(t, fullNumberRegexp.MatchString(s), s)
+	}
+}
+
+// searchResult builds the search results used by the filtering tests.
+func searchResult(id, number string) *model.MovieSearchResult {
+	return &model.MovieSearchResult{
+		ID:       id,
+		Number:   number,
+		Provider: Name,
+		Homepage: fmt.Sprintf(movieURL, id),
+	}
+}
+
+func TestJavDBFilterResultsByNumber(t *testing.T) {
+	// The first results of https://javdb.com/search?q=MDVR-411&f=all.
+	results := []*model.MovieSearchResult{
+		searchResult("82ZKA3", "MDVR-411"),
+		searchResult("NQmqBN", "MDVR-441"),
+		searchResult("0e2WRJ", "MDVR-421"),
+		searchResult("Mb7XV1", "MDVR-419"),
+		searchResult("Mb21J", "MDVR-011"),
+	}
+
+	filtered := filterResultsByNumber(results, "MDVR-411")
+	require.Len(t, filtered, 1)
+	assert.Equal(t, "MDVR-411", filtered[0].Number)
+
+	// An exact match wins over JavDB's rewritten ones.
+	filtered = filterResultsByNumber(results, "MDVR-011")
+	require.Len(t, filtered, 1)
+	assert.Equal(t, "MDVR-011", filtered[0].Number)
+
+	// A title search is fuzzy by nature and must not be filtered.
+	assert.Nil(t, filterResultsByNumber(results, "MDVR 411 エロ配信"))
+	assert.Nil(t, filterResultsByNumber(results, "MDVR"))
+	// Nothing related, so the caller falls back to the raw results.
+	assert.Nil(t, filterResultsByNumber(results, "SSIS-001"))
+}
+
+func TestJavDBFilterResultsByNumberWithRewrites(t *testing.T) {
+	results := []*model.MovieSearchResult{
+		searchResult("mbQOd", "LUXU-1234"),
+		searchResult("abcde", "LUXU-1230"),
+		searchResult("fghij", "LUXU-1232"),
+	}
+	filtered := filterResultsByNumber(results, "259LUXU-1234")
+	require.Len(t, filtered, 1)
+	assert.Equal(t, "LUXU-1234", filtered[0].Number)
+
+	results = []*model.MovieSearchResult{
+		searchResult("rezDN", "FC2-1234567"),
+		searchResult("3ENE9", "FC2-1234560"),
+	}
+	filtered = filterResultsByNumber(results, "FC2-PPV-1234567")
+	require.Len(t, filtered, 1)
+	assert.Equal(t, "FC2-1234567", filtered[0].Number)
+}
+
+func TestJavDBFindResultByNumber(t *testing.T) {
+	results := []*model.MovieSearchResult{
+		searchResult("mbQOd", "LUXU-1234"),
+	}
+	// Exact lookup fails, the tolerant one succeeds.
+	assert.Nil(t, findResultByNumber(results, "259LUXU-1234", true))
+	assert.NotNil(t, findResultByNumber(results, "259LUXU-1234", false))
+	assert.Nil(t, findResultByNumber(results, "LUXU-1230", false))
 }
 
 func TestJavDBIsLoginRedirect(t *testing.T) {

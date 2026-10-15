@@ -54,6 +54,18 @@ var scoreRegexp = regexp.MustCompile(`(\d+(?:\.\d+)?)\s*分`)
 
 var nonAlnumRegexp = regexp.MustCompile(`[^A-Z\d]`)
 
+// digitRegexp and letterRegexp are used to compare movie numbers regardless of
+// the label prefixes JavDB adds or drops.
+var (
+	digitRegexp  = regexp.MustCompile(`\d+`)
+	letterRegexp = regexp.MustCompile(`[A-Za-z]`)
+)
+
+// fullNumberRegexp matches a complete movie number such as "MDVR-411",
+// "SSIS001", "259LUXU-1234" or "FC2-PPV-1234567". Titles contain spaces or
+// non-ASCII characters, so they never match and are therefore never filtered.
+var fullNumberRegexp = regexp.MustCompile(`(?i)^[a-z\d]+(?:[-_][a-z\d]+)*\d$`)
+
 // errCloudflare is returned when Cloudflare refuses to serve real content,
 // which usually means the request needs to go through a proxy.
 var errCloudflare = sdkerrors.New(
@@ -155,26 +167,27 @@ func (javdb *JavDB) GetMovieInfoByID(id string) (*model.MovieInfo, error) {
 }
 
 // GetMovieInfoByNumber resolves a movie number (e.g. "IPVR-328") into movie
-// info by searching JavDB and picking the exact match, if any.
+// info by searching JavDB and picking the matching entry, if any.
 func (javdb *JavDB) GetMovieInfoByNumber(number string) (*model.MovieInfo, error) {
 	keyword := javdb.NormalizeMovieKeyword(number)
 	if keyword == "" {
 		return nil, provider.ErrInvalidID
 	}
 
-	results, err := javdb.SearchMovie(keyword)
+	results, err := javdb.searchMovie(keyword)
 	if err != nil {
 		return nil, err
 	}
 
-	wanted := map[string]struct{}{
-		normalizeNumber(number):  {},
-		normalizeNumber(keyword): {},
+	// An identical number wins, JavDB's own rewrites are the second choice:
+	// "259LUXU-1234" is listed as "LUXU-1234" and "FC2-PPV-1234567" as
+	// "FC2-1234567". Trying exact matches first also keeps numbers such as
+	// "MDVR-011" from matching "MDVR-11".
+	if result := findResultByNumber(results, keyword, true); result != nil {
+		return javdb.GetMovieInfoByURL(result.Homepage)
 	}
-	for _, result := range results {
-		if _, ok := wanted[normalizeNumber(result.Number)]; ok {
-			return javdb.GetMovieInfoByURL(result.Homepage)
-		}
+	if result := findResultByNumber(results, keyword, false); result != nil {
+		return javdb.GetMovieInfoByURL(result.Homepage)
 	}
 	return nil, provider.ErrInfoNotFound
 }
@@ -304,7 +317,32 @@ func (javdb *JavDB) NormalizeMovieKeyword(keyword string) string {
 	return keyword
 }
 
+// SearchMovie searches JavDB and drops the results that do not belong to the
+// queried number. JavDB's own search is fuzzy: "MDVR-411" also returns
+// MDVR-441, MDVR-421, MDVR-419 and so on, and only ranks the queried movie
+// first. Since callers (e.g. Jellyfin's identify dialog) list every result,
+// those unrelated entries are filtered out here.
 func (javdb *JavDB) SearchMovie(keyword string) (results []*model.MovieSearchResult, err error) {
+	keyword = javdb.NormalizeMovieKeyword(keyword)
+	if keyword == "" {
+		return nil, provider.ErrInvalidKeyword
+	}
+
+	results, err = javdb.searchMovie(keyword)
+	if err != nil || len(results) == 0 {
+		return results, err
+	}
+
+	if filtered := filterResultsByNumber(results, keyword); len(filtered) > 0 {
+		return filtered, nil
+	}
+	// Nothing similar enough was found, keep JavDB's own results as a
+	// best-effort fallback so that the caller can still pick manually.
+	return results, nil
+}
+
+// searchMovie returns JavDB's raw search results, without any filtering.
+func (javdb *JavDB) searchMovie(keyword string) (results []*model.MovieSearchResult, err error) {
 	c := javdb.collector()
 
 	var reqErr error
@@ -434,4 +472,82 @@ func parseScore(s string) float64 {
 // "IPVR-328", "ipvr328" and "IPVR_328" compare as equal.
 func normalizeNumber(s string) string {
 	return nonAlnumRegexp.ReplaceAllString(strings.ToUpper(s), "")
+}
+
+// trailingDigits returns the last group of digits of a movie number, so that
+// "LUXU-1234" and "259LUXU-1234" both yield "1234". Leading zeros are ignored.
+func trailingDigits(s string) string {
+	runs := digitRegexp.FindAllString(s, -1)
+	if len(runs) == 0 {
+		return ""
+	}
+	if digits := strings.TrimLeft(runs[len(runs)-1], "0"); digits != "" {
+		return digits
+	}
+	return "0"
+}
+
+// lettersOnly returns the letters of a movie number in upper case, so that
+// "FC2-PPV-1234567" yields "FCPPV".
+func lettersOnly(s string) string {
+	return strings.Join(letterRegexp.FindAllString(strings.ToUpper(s), -1), "")
+}
+
+// sameNumber reports whether two movie numbers refer to the same movie even
+// though JavDB spells them differently. JavDB drops some label prefixes, e.g.
+// "259LUXU-1234" is listed as "LUXU-1234" and "FC2-PPV-1234567" as
+// "FC2-1234567", so the letters only need to be compatible while the trailing
+// digits have to match exactly.
+func sameNumber(a, b string) bool {
+	digits := trailingDigits(a)
+	if digits == "" || digits != trailingDigits(b) {
+		return false
+	}
+	aLetters, bLetters := lettersOnly(a), lettersOnly(b)
+	return strings.HasPrefix(aLetters, bLetters) || strings.HasSuffix(aLetters, bLetters) ||
+		strings.HasPrefix(bLetters, aLetters) || strings.HasSuffix(bLetters, aLetters)
+}
+
+// matchesNumber reports whether a number refers to the wanted one. When exact
+// is set, the numbers have to be identical; otherwise JavDB's rewrites of the
+// label prefix are tolerated as well.
+func matchesNumber(number, wanted string, exact bool) bool {
+	if normalizeNumber(number) == normalizeNumber(wanted) {
+		return true
+	}
+	return !exact && sameNumber(number, wanted)
+}
+
+// findResultByNumber returns the first result referring to the wanted number.
+func findResultByNumber(results []*model.MovieSearchResult, wanted string, exact bool) *model.MovieSearchResult {
+	for _, result := range results {
+		if matchesNumber(result.Number, wanted, exact) {
+			return result
+		}
+	}
+	return nil
+}
+
+// filterResultsByNumber returns the results that refer to the wanted number.
+// It returns nil for keywords that are not a complete movie number, and when
+// no result is similar enough, so that the caller can fall back to the raw
+// search results.
+func filterResultsByNumber(results []*model.MovieSearchResult, wanted string) []*model.MovieSearchResult {
+	if !fullNumberRegexp.MatchString(wanted) {
+		return nil
+	}
+	// Identical numbers win over JavDB's rewritten ones.
+	if exact := filterResults(results, wanted, true); len(exact) > 0 {
+		return exact
+	}
+	return filterResults(results, wanted, false)
+}
+
+func filterResults(results []*model.MovieSearchResult, wanted string, exact bool) (filtered []*model.MovieSearchResult) {
+	for _, result := range results {
+		if matchesNumber(result.Number, wanted, exact) {
+			filtered = append(filtered, result)
+		}
+	}
+	return filtered
 }
