@@ -26,6 +26,7 @@ import (
 	_ "github.com/1103020472/metatube-sdk-go/provider/heyzo"
 	_ "github.com/1103020472/metatube-sdk-go/provider/jav321"
 	_ "github.com/1103020472/metatube-sdk-go/provider/javbus"
+	_ "github.com/1103020472/metatube-sdk-go/provider/javdb"
 	_ "github.com/1103020472/metatube-sdk-go/provider/javfree"
 	_ "github.com/1103020472/metatube-sdk-go/provider/kin8tengoku"
 	_ "github.com/1103020472/metatube-sdk-go/provider/mgstage"
