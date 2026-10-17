@@ -255,7 +255,12 @@ func (avl *AVLeague) searchAvLeagueActor(keyword string) (results []*model.Actor
 		// lj-还不清楚演员的多张图片是怎么来的，知道的话看下是否有优化空间
 		// Images
 		var images []string
+		// lj-优先取懒加载属性 data-layzr；部分页面（如新演员）直接用普通 src
+		// 且 loading="eager"，此时回退到 src，否则搜索结果的 images 会是空的，
+		// 导致客户端误判“AV-LEAGUE 无头像”而回退到 Gfriends。
 		if img := e.ChildAttr(`.//div[@class="l-pic"]/a/img`, "data-layzr" /* lazy loading */); img != "" {
+			images = []string{e.Request.AbsoluteURL(img)}
+		} else if img := e.ChildAttr(`.//div[@class="l-pic"]/a/img`, "src"); img != "" {
 			images = []string{e.Request.AbsoluteURL(img)}
 		}
 
