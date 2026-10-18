@@ -212,16 +212,20 @@ func (fz *FANZA) getDigitalMovieInfoByURL(rawURL string) (*model.MovieInfo, erro
 		info.Actors = append(info.Actors, data.PPVContent.AmateurActress.Name)
 	}
 
-	// ===================== 新增：av-wiki 兜底逻辑 =====================
-	// 替换为你业务中的真实番号变量，如 data.Code / data.Number 等
-	if len(info.Actors) == 0 {
-		wikiActors, err := getActorsFromWiki(info.Number)
-		if err == nil && len(wikiActors) > 0 {
+	// Number (fallback)
+	if info.Number == "" {
+		info.Number = ParseNumber(info.ID)
+	}
+
+	// Actors (av-wiki fallback)
+	if len(info.Actors) == 0 && info.Number != "" {
+		if wikiActors, wikiErr := getActorsFromWiki(info.Number); wikiErr == nil && len(wikiActors) > 0 {
 			log.Print("通过av-wiki获取演员：" + info.Number)
-			info.Actors = append(info.Actors, wikiActors...)
+			info.Actors = wikiActors
+		} else if wikiErr != nil {
+			log.Printf("av-wiki 兜底查询演员失败 %s: %v", info.Number, wikiErr)
 		}
 	}
-	// ================================================================
 
 	// Genres
 	for _, genre := range data.PPVContent.Genres {
@@ -589,6 +593,21 @@ func (fz *FANZA) getMonoMovieInfoByURL(rawURL string) (info *model.MovieInfo, er
 			return fz.getDigitalMovieInfoByURL(urlErr.URL) // use the new handler.
 		}
 		err = vErr
+	}
+
+	// Number (fallback)
+	if info.Number == "" {
+		info.Number = ParseNumber(info.ID)
+	}
+
+	// Actors (av-wiki fallback)
+	if len(info.Actors) == 0 && info.Number != "" {
+		if wikiActors, wikiErr := getActorsFromWiki(info.Number); wikiErr == nil && len(wikiActors) > 0 {
+			log.Print("通过av-wiki获取演员：" + info.Number)
+			info.Actors = wikiActors
+		} else if wikiErr != nil {
+			log.Printf("av-wiki 兜底查询演员失败 %s: %v", info.Number, wikiErr)
+		}
 	}
 	return
 }
