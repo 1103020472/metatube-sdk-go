@@ -32,6 +32,9 @@ type Engine struct {
 	// Name:Config Case-Insensitive Map
 	actorProviderConfigs *maps.CaseInsensitiveMap[mt.Config]
 	movieProviderConfigs *maps.CaseInsensitiveMap[mt.Config]
+	// Movie provider configs from env (MT_MOVIE_PROVIDER_*), captured at
+	// init time so runtime queries can still see them.
+	initMovieProviderConfigs *maps.CaseInsensitiveMap[mt.Config]
 	// Name:Provider Case-Insensitive Map
 	actorProviders *maps.CaseInsensitiveMap[mt.ActorProvider]
 	movieProviders *maps.CaseInsensitiveMap[mt.MovieProvider]
@@ -52,6 +55,7 @@ func New(db *gorm.DB, opts ...Option) *Engine {
 		// pre-initialize case-insensitive maps.
 		actorProviderConfigs: maps.NewCaseInsensitiveMap[mt.Config](),
 		movieProviderConfigs: maps.NewCaseInsensitiveMap[mt.Config](),
+		initMovieProviderConfigs: maps.NewCaseInsensitiveMap[mt.Config](),
 		actorProviders:       maps.NewCaseInsensitiveMap[mt.ActorProvider](),
 		movieProviders:       maps.NewCaseInsensitiveMap[mt.MovieProvider](),
 		actorHostProviders:   maps.NewCaseInsensitiveMap[[]mt.ActorProvider](),

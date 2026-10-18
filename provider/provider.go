@@ -1,14 +1,20 @@
 package provider
 
 import (
+	"errors"
+	"iter"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 
 	"golang.org/x/text/language"
 
 	"github.com/1103020472/metatube-sdk-go/model"
 )
+
+// ErrKeyNotFound is returned by EditableConfig getters for missing keys.
+var ErrKeyNotFound = errors.New("key not found")
 
 type Provider interface {
 	// Name returns the name of the provider.
@@ -117,4 +123,76 @@ type Config interface {
 type ConfigSetter interface {
 	// SetConfig sets any additional configs for Provider.
 	SetConfig(config Config) error
+}
+
+// EditableConfig is a Config that can be built at runtime, used by the
+// engine's runtime provider-config API.
+type EditableConfig interface {
+	Config
+
+	Set(key, value string)
+	Delete(key string)
+	Len() int
+	Iterator() iter.Seq2[string, string]
+}
+
+// NewEditableConfig returns an empty EditableConfig.
+func NewEditableConfig() EditableConfig {
+	return &editableConfig{values: make(map[string]string)}
+}
+
+type editableConfig struct {
+	values map[string]string
+}
+
+func (c *editableConfig) Set(key, value string)     { c.values[key] = value }
+func (c *editableConfig) Delete(key string)         { delete(c.values, key) }
+func (c *editableConfig) Len() int                  { return len(c.values) }
+func (c *editableConfig) Has(key string) bool       { _, ok := c.values[key]; return ok }
+func (c *editableConfig) GetString(key string) (string, error) {
+	v, ok := c.values[key]
+	if !ok {
+		return "", ErrKeyNotFound
+	}
+	return v, nil
+}
+func (c *editableConfig) GetBool(key string) (bool, error) {
+	v, ok := c.values[key]
+	if !ok {
+		return false, ErrKeyNotFound
+	}
+	return strconv.ParseBool(v)
+}
+func (c *editableConfig) GetInt64(key string) (int64, error) {
+	v, ok := c.values[key]
+	if !ok {
+		return 0, ErrKeyNotFound
+	}
+	return strconv.ParseInt(v, 10, 64)
+}
+func (c *editableConfig) GetFloat64(key string) (float64, error) {
+	v, ok := c.values[key]
+	if !ok {
+		return 0, ErrKeyNotFound
+	}
+	return strconv.ParseFloat(v, 64)
+}
+func (c *editableConfig) GetDuration(key string) (time.Duration, error) {
+	v, ok := c.values[key]
+	if !ok {
+		return 0, ErrKeyNotFound
+	}
+	return time.ParseDuration(v)
+}
+
+// Iterator returns all key-value pairs, used by callers that need to copy
+// the config into another implementation.
+func (c *editableConfig) Iterator() iter.Seq2[string, string] {
+	return func(yield func(string, string) bool) {
+		for k, v := range c.values {
+			if !yield(k, v) {
+				return
+			}
+		}
+	}
 }

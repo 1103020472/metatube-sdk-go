@@ -13,6 +13,7 @@ import (
 
 	"github.com/1103020472/metatube-sdk-go/internal/envconfig"
 	"github.com/1103020472/metatube-sdk-go/model"
+	sdkerrors "github.com/1103020472/metatube-sdk-go/errors"
 	"github.com/1103020472/metatube-sdk-go/provider/internal/testkit"
 )
 
@@ -217,8 +218,7 @@ func TestJavDBFindResultByNumber(t *testing.T) {
 	assert.Nil(t, findResultByNumber(results, "LUXU-1230", false))
 }
 
-func TestJavDBIsLoginRedirect(t *testing.T) {
-	response := func(rawURL string) *colly.Response {
+func TestJavDBIsLoginRedirect(t *testing.T) {	response := func(rawURL string) *colly.Response {
 		u, err := url.Parse(rawURL)
 		assert.NoError(t, err)
 		return &colly.Response{Request: &colly.Request{URL: u}}
@@ -273,4 +273,38 @@ func TestJavDBSetConfigCookie(t *testing.T) {
 	require.NoError(t, javdb.SetConfig(config))
 	require.NoError(t, javdb.collector().Visit(server.URL))
 	assert.Contains(t, cookie, "_jdb_session=abc123")
+}
+
+func TestJavDBResponseErrorLoginRequired(t *testing.T) {
+	javdb := New()
+	response := func(rawURL string) *colly.Response {
+		u, err := url.Parse(rawURL)
+		require.NoError(t, err)
+		return &colly.Response{
+			Request:    &colly.Request{URL: u},
+			StatusCode: http.StatusOK,
+			Headers:    &http.Header{},
+		}
+	}
+
+	// Without a cookie: "login required" (setup hint).
+	err := javdb.responseError(response("https://javdb.com/login"))
+	require.Error(t, err)
+	var httpErr *sdkerrors.HTTPError
+	require.ErrorAs(t, err, &httpErr)
+	assert.Equal(t, http.StatusUnauthorized, httpErr.Code)
+	assert.Contains(t, httpErr.Message, "需要登录")
+	assert.Contains(t, httpErr.Message, "cookie")
+
+	// With an expired cookie configured: "cookie expired" hint.
+	config := envconfig.NewConfig()
+	config.Set("cookie", "_jdb_session=expired")
+	require.NoError(t, javdb.SetConfig(config))
+	err = javdb.responseError(response("https://javdb.com/login"))
+	require.Error(t, err)
+	require.ErrorAs(t, err, &httpErr)
+	assert.Contains(t, httpErr.Message, "cookie 已失效")
+
+	// A normal page is not an error.
+	assert.NoError(t, javdb.responseError(response("https://javdb.com/v/Mb4Dbv")))
 }

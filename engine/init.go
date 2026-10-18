@@ -65,6 +65,17 @@ func (e *Engine) addActorHost(host string, provider mt.ActorProvider) {
 
 // initMovieProviders initializes movie providers.
 func (e *Engine) initMovieProviders() {
+	// Snapshot env-based configs before any runtime update so that
+	// GetMovieProviderConfig can always fall back to them.
+	for name, config := range e.movieProviderConfigs.Iterator() {
+		snapshot := mt.NewEditableConfig()
+		if editable, ok := config.(mt.EditableConfig); ok {
+			for k, v := range editable.Iterator() {
+				snapshot.Set(k, v)
+			}
+		}
+		e.initMovieProviderConfigs.Set(name, snapshot)
+	}
 	for name, factory := range mt.RangeMovieFactory {
 		provider := factory()
 

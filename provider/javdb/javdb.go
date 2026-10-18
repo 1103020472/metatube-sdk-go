@@ -78,7 +78,15 @@ var errCloudflare = sdkerrors.New(
 // still be found by search, but only a session cookie unlocks their details.
 var errLoginRequired = sdkerrors.New(
 	http.StatusUnauthorized,
-	"javdb: entry details require a JavDB account, configure a session cookie for this provider",
+	"JavDB 该条目需要登录后才能访问（常见于 FC2 等素人番号），请在服务端配置 JavDB cookie",
+)
+
+// errCookieExpired is returned when a session cookie was configured but no
+// longer works (JavDB redirected a cookie-carrying request to the login
+// page). It tells the user to refresh the cookie instead of setting one.
+var errCookieExpired = sdkerrors.New(
+	http.StatusUnauthorized,
+	"JavDB cookie 已失效，请重新从浏览器复制 _jdb_session cookie 并更新配置",
 )
 
 type JavDB struct {
@@ -211,7 +219,7 @@ func (javdb *JavDB) GetMovieInfoByURL(rawURL string) (info *model.MovieInfo, err
 
 	var reqErr error
 	c.OnResponse(func(r *colly.Response) {
-		reqErr = responseError(r)
+		reqErr = javdb.responseError(r)
 	})
 
 	// Title, JavDB shows a localized title but keeps the original one in a
@@ -347,7 +355,7 @@ func (javdb *JavDB) searchMovie(keyword string) (results []*model.MovieSearchRes
 
 	var reqErr error
 	c.OnResponse(func(r *colly.Response) {
-		reqErr = responseError(r)
+		reqErr = javdb.responseError(r)
 	})
 
 	c.OnXML(`//div[contains(@class, "movie-list")]/div[@class="item"]/a[@class="box"]`, func(e *colly.XMLElement) {
@@ -399,13 +407,17 @@ func init() {
 
 // responseError converts a JavDB response into a meaningful error, so that
 // callers never mistake a Cloudflare challenge page for real content.
-func responseError(r *colly.Response) error {
+func (javdb *JavDB) responseError(r *colly.Response) error {
 	switch {
 	case r == nil:
 		return nil
 	case isCloudflareChallenge(r):
 		return errCloudflare
 	case isLoginRedirect(r):
+		// A configured cookie that still lands on the login page has expired.
+		if cookie, _ := javdb.cookie.Load().(string); cookie != "" {
+			return errCookieExpired
+		}
 		return errLoginRequired
 	case r.StatusCode == http.StatusNotFound:
 		return provider.ErrInfoNotFound

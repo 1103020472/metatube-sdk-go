@@ -73,6 +73,9 @@ func New(app *engine.Engine, v auth.Validator) *gin.Engine {
 			movies.GET("/search", getSearch(app, movieSearchType))
 		}
 
+		// Runtime provider config updates, e.g. JavDB's session cookie.
+		private.POST("/providers/config", setProviderConfig(app))
+
 		reviews := private.Group("/reviews")
 		{
 			reviews.GET("/:provider/:id", getReview(app))
