@@ -66,6 +66,21 @@ type MovieProvider interface {
 	GetMovieInfoByURL(url string) (*model.MovieInfo, error)
 }
 
+// MovieNumberProvider is implemented by movie providers that can resolve a
+// movie number (e.g. "SSIS-001") into movie info directly. JavDB is such a
+// provider: its IDs are short hashes, so a number is resolved by searching.
+type MovieNumberProvider interface {
+	// GetMovieInfoByNumber gets movie's info by its number.
+	GetMovieInfoByNumber(number string) (*model.MovieInfo, error)
+}
+
+// ActorFallbackSetter is implemented by providers that borrow the actor list
+// from another provider when their own source has none.
+type ActorFallbackSetter interface {
+	// SetActorFallbackProvider sets the fallback source of actors.
+	SetActorFallbackProvider(provider MovieNumberProvider)
+}
+
 type ActorSearcher interface {
 	// SearchActor searches matched actor/s.
 	SearchActor(keyword string) ([]*model.ActorSearchResult, error)
@@ -145,10 +160,10 @@ type editableConfig struct {
 	values map[string]string
 }
 
-func (c *editableConfig) Set(key, value string)     { c.values[key] = value }
-func (c *editableConfig) Delete(key string)         { delete(c.values, key) }
-func (c *editableConfig) Len() int                  { return len(c.values) }
-func (c *editableConfig) Has(key string) bool       { _, ok := c.values[key]; return ok }
+func (c *editableConfig) Set(key, value string) { c.values[key] = value }
+func (c *editableConfig) Delete(key string)     { delete(c.values, key) }
+func (c *editableConfig) Len() int              { return len(c.values) }
+func (c *editableConfig) Has(key string) bool   { _, ok := c.values[key]; return ok }
 func (c *editableConfig) GetString(key string) (string, error) {
 	v, ok := c.values[key]
 	if !ok {

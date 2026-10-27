@@ -20,6 +20,7 @@ import (
 	sdkerrors "github.com/1103020472/metatube-sdk-go/errors"
 	"github.com/1103020472/metatube-sdk-go/model"
 	"github.com/1103020472/metatube-sdk-go/provider"
+	"github.com/1103020472/metatube-sdk-go/provider/internal/actorname"
 	"github.com/1103020472/metatube-sdk-go/provider/internal/scraper"
 )
 
@@ -283,9 +284,10 @@ func (javdb *JavDB) GetMovieInfoByURL(rawURL string) (info *model.MovieInfo, err
 		}
 	})
 
-	// Actors
+	// Actors, JavDB shows a placeholder such as "N/A" when the movie has no
+	// credited actress, which must not end up as an actor name.
 	c.OnXML(`//nav[@class="panel movie-panel-info"]//a[starts-with(@href, "/actors/")]`, func(e *colly.XMLElement) {
-		if actor := strings.TrimSpace(e.Text); actor != "" {
+		if actor := strings.TrimSpace(e.Text); actor != "" && !actorname.IsPlaceholder(actor) {
 			info.Actors = append(info.Actors, actor)
 		}
 	})

@@ -31,14 +31,16 @@ import (
 	"github.com/1103020472/metatube-sdk-go/provider"
 	"github.com/1103020472/metatube-sdk-go/provider/fanza/internal/graphql"
 	"github.com/1103020472/metatube-sdk-go/provider/fanza/internal/searchparse"
+	"github.com/1103020472/metatube-sdk-go/provider/internal/actorname"
 	"github.com/1103020472/metatube-sdk-go/provider/internal/imcmp"
 	"github.com/1103020472/metatube-sdk-go/provider/internal/scraper"
 )
 
 var (
-	_ provider.MovieProvider = (*FANZA)(nil)
-	_ provider.MovieSearcher = (*FANZA)(nil)
-	_ provider.MovieReviewer = (*FANZA)(nil)
+	_ provider.MovieProvider       = (*FANZA)(nil)
+	_ provider.MovieSearcher       = (*FANZA)(nil)
+	_ provider.MovieReviewer       = (*FANZA)(nil)
+	_ provider.ActorFallbackSetter = (*FANZA)(nil)
 )
 
 const (
@@ -80,6 +82,8 @@ type FANZA struct {
 	*scraper.Scraper
 	httpClient *http.Client
 	videoAPI   *graphql.Client
+	// actorFallback 是演员的兜底数据源（目前由 JavDB 提供），未注入时为 nil。
+	actorFallback provider.MovieNumberProvider
 }
 
 func New() *FANZA {
@@ -104,6 +108,15 @@ func New() *FANZA {
 func (fz *FANZA) SetRequestTimeout(timeout time.Duration) {
 	fz.httpClient.Timeout = timeout
 	fz.Scraper.SetRequestTimeout(timeout)
+}
+
+// SetActorFallbackProvider 注入演员的兜底数据源。
+//
+// engine 在初始化时会把 JavDB provider 注入进来：JavDB 那边已经处理好了
+// Cloudflare、cookie、代理和番号写法差异，这里直接复用它的抓取逻辑，
+// 而不是在 FANZA 里再写一套 JavDB 的解析。
+func (fz *FANZA) SetActorFallbackProvider(fallback provider.MovieNumberProvider) {
+	fz.actorFallback = fallback
 }
 
 func (fz *FANZA) NormalizeMovieID(id string) string {
@@ -217,15 +230,8 @@ func (fz *FANZA) getDigitalMovieInfoByURL(rawURL string) (*model.MovieInfo, erro
 		info.Number = ParseNumber(info.ID)
 	}
 
-	// Actors (av-wiki fallback)
-	if len(info.Actors) == 0 && info.Number != "" {
-		if wikiActors, wikiErr := getActorsFromWiki(info.Number); wikiErr == nil && len(wikiActors) > 0 {
-			log.Print("通过av-wiki获取演员：" + info.Number)
-			info.Actors = wikiActors
-		} else if wikiErr != nil {
-			log.Printf("av-wiki 兜底查询演员失败 %s: %v", info.Number, wikiErr)
-		}
-	}
+	// Actors (av-wiki / JavDB fallback)
+	fz.fillActorsFromFallback(info)
 
 	// Genres
 	for _, genre := range data.PPVContent.Genres {
@@ -600,15 +606,8 @@ func (fz *FANZA) getMonoMovieInfoByURL(rawURL string) (info *model.MovieInfo, er
 		info.Number = ParseNumber(info.ID)
 	}
 
-	// Actors (av-wiki fallback)
-	if len(info.Actors) == 0 && info.Number != "" {
-		if wikiActors, wikiErr := getActorsFromWiki(info.Number); wikiErr == nil && len(wikiActors) > 0 {
-			log.Print("通过av-wiki获取演员：" + info.Number)
-			info.Actors = wikiActors
-		} else if wikiErr != nil {
-			log.Printf("av-wiki 兜底查询演员失败 %s: %v", info.Number, wikiErr)
-		}
-	}
+	// Actors (av-wiki / JavDB fallback)
+	fz.fillActorsFromFallback(info)
 	return
 }
 
@@ -1170,6 +1169,53 @@ func PreviewSrc(s string) string {
 	}
 }
 
+// fillActorsFromFallback 在 FANZA 自身拿不到演员时逐层兜底：
+// 先查 av-wiki，av-wiki 也没有再用 JavDB 的数据。
+func (fz *FANZA) fillActorsFromFallback(info *model.MovieInfo) {
+	if info == nil || len(info.Actors) > 0 || info.Number == "" {
+		return
+	}
+
+	// 第一层兜底：av-wiki
+	if wikiActors, err := getActorsFromWiki(info.Number); err == nil {
+		if wikiActors = actorname.Clean(wikiActors); len(wikiActors) > 0 {
+			log.Printf("[%s] 通过av-wiki获取演员：%s", fz.Name(), info.Number)
+			info.Actors = wikiActors
+			return
+		}
+	} else {
+		log.Printf("[%s] av-wiki 兜底查询演员失败 %s: %v", fz.Name(), info.Number, err)
+	}
+
+	// 第二层兜底：JavDB
+	javdbActors, err := fz.getActorsFromJavDB(info.Number)
+	if err != nil {
+		log.Printf("[%s] JavDB 兜底查询演员失败 %s: %v", fz.Name(), info.Number, err)
+		return
+	}
+	if len(javdbActors) > 0 {
+		log.Printf("[%s] 通过JavDB获取演员：%s", fz.Name(), info.Number)
+		info.Actors = javdbActors
+	}
+}
+
+// getActorsFromJavDB 用 JavDB 的数据兜底获取演员。
+// 只取演员字段，其余信息仍然以 FANZA 为准。
+func (fz *FANZA) getActorsFromJavDB(number string) ([]string, error) {
+	if fz.actorFallback == nil {
+		return nil, errors.New("未注入 JavDB 兜底数据源")
+	}
+	info, err := fz.actorFallback.GetMovieInfoByNumber(number)
+	if err != nil {
+		return nil, err
+	}
+	if info == nil {
+		return nil, provider.ErrInfoNotFound
+	}
+	// JavDB 没有演员时会给 "N/A" 之类的占位值，这里一并清掉。
+	return actorname.Clean(info.Actors), nil
+}
+
 // 补充：从 av-wiki.net 兜底获取演员
 func getActorsFromWiki(code string) ([]string, error) {
 	if code == "" {
@@ -1240,9 +1286,7 @@ func getActorsFromWiki(code string) ([]string, error) {
 
 	traverse(doc)
 
-	// 去重（可选）
-	actors = uniqueSlice(actors)
-	return actors, nil
+	return actorname.Clean(actors), nil
 }
 
 // 提取节点内的纯文本
@@ -1256,19 +1300,6 @@ func getNodeText(n *html.Node) string {
 		}
 	}
 	return text
-}
-
-// 切片去重
-func uniqueSlice(slice []string) []string {
-	seen := make(map[string]struct{})
-	res := make([]string, 0, len(slice))
-	for _, s := range slice {
-		if _, ok := seen[s]; !ok {
-			seen[s] = struct{}{}
-			res = append(res, s)
-		}
-	}
-	return res
 }
 
 func init() {

@@ -100,6 +100,46 @@ func (e *Engine) initMovieProviders() {
 			append(e.movieHostProviders.
 				GetOrDefault(host, nil), provider))
 	}
+	// Providers are all registered now, wire the fallbacks between them.
+	e.initActorFallbacks()
+}
+
+// initActorFallbacks wires the actor fallbacks between movie providers, e.g.
+// FANZA borrows the actor list from JavDB when neither FANZA nor av-wiki knows
+// the actress of a movie.
+//
+// Providers are looked up by name so that they stay decoupled from each other,
+// and the fallback is the very instance configured by the engine above, so the
+// cookie / proxy / timeout settings of that provider keep working.
+func (e *Engine) initActorFallbacks() {
+	const (
+		consumerProviderName = "FANZA"
+		fallbackProviderName = "JavDB"
+	)
+
+	consumer, ok := e.movieProviders.Get(consumerProviderName)
+	if !ok {
+		return
+	}
+	setter, ok := consumer.(mt.ActorFallbackSetter)
+	if !ok {
+		return
+	}
+
+	fallback, ok := e.movieProviders.Get(fallbackProviderName)
+	if !ok {
+		e.logger.Printf("%s actor fallback disabled: %s provider not found",
+			consumerProviderName, fallbackProviderName)
+		return
+	}
+	numberProvider, ok := fallback.(mt.MovieNumberProvider)
+	if !ok {
+		return
+	}
+
+	setter.SetActorFallbackProvider(numberProvider)
+	e.logger.Printf("Set %s actor fallback provider: %s",
+		consumerProviderName, fallbackProviderName)
 }
 
 func (e *Engine) applyProviderConfig(providerType string, provider mt.Provider, config mt.Config) {

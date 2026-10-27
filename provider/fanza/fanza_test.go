@@ -5,6 +5,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/1103020472/metatube-sdk-go/model"
+	"github.com/1103020472/metatube-sdk-go/provider"
 	"github.com/1103020472/metatube-sdk-go/provider/internal/testkit"
 )
 
@@ -188,4 +190,83 @@ func TestPreviewSrc(t *testing.T) {
 	} {
 		assert.Equal(t, unit.want, PreviewSrc(unit.src))
 	}
+}
+
+// fakeNumberProvider 模拟兜底数据源（JavDB），避免单元测试访问网络。
+type fakeNumberProvider struct {
+	info *model.MovieInfo
+	err  error
+	got  string
+}
+
+func (f *fakeNumberProvider) GetMovieInfoByNumber(number string) (*model.MovieInfo, error) {
+	f.got = number
+	return f.info, f.err
+}
+
+func TestFANZA_getActorsFromJavDB(t *testing.T) {
+	t.Run("NoFallbackProvider", func(t *testing.T) {
+		_, err := New().getActorsFromJavDB("SSIS-001")
+		assert.Error(t, err)
+	})
+
+	t.Run("Actors", func(t *testing.T) {
+		fallback := &fakeNumberProvider{
+			info: &model.MovieInfo{Actors: []string{"三上悠亜", "三上悠亜", " "}},
+		}
+		fz := New()
+		fz.SetActorFallbackProvider(fallback)
+
+		actors, err := fz.getActorsFromJavDB("SSIS-001")
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"三上悠亜"}, actors)
+		assert.Equal(t, "SSIS-001", fallback.got)
+	})
+
+	t.Run("PlaceholderActors", func(t *testing.T) {
+		// JavDB 没有演员时给的是 N/A，这种不能被当成演员。
+		for _, placeholder := range []string{"N/A", "n/a", " N/A ", "N／A", "NA", "未知", "-"} {
+			fz := New()
+			fz.SetActorFallbackProvider(&fakeNumberProvider{
+				info: &model.MovieInfo{Actors: []string{placeholder}},
+			})
+
+			actors, err := fz.getActorsFromJavDB("SSIS-001")
+			assert.NoError(t, err, placeholder)
+			assert.Empty(t, actors, placeholder)
+		}
+	})
+
+	t.Run("NotFound", func(t *testing.T) {
+		fz := New()
+		fz.SetActorFallbackProvider(&fakeNumberProvider{err: provider.ErrInfoNotFound})
+
+		actors, err := fz.getActorsFromJavDB("SSIS-001")
+		assert.ErrorIs(t, err, provider.ErrInfoNotFound)
+		assert.Empty(t, actors)
+	})
+}
+
+func TestFANZA_fillActorsFromFallback(t *testing.T) {
+	t.Run("SkipWhenActorsExist", func(t *testing.T) {
+		fallback := &fakeNumberProvider{info: &model.MovieInfo{Actors: []string{"JavDB演员"}}}
+		fz := New()
+		fz.SetActorFallbackProvider(fallback)
+
+		info := &model.MovieInfo{Number: "SSIS-001", Actors: []string{"FANZA演员"}}
+		fz.fillActorsFromFallback(info)
+		assert.Equal(t, []string{"FANZA演员"}, []string(info.Actors))
+		assert.Empty(t, fallback.got, "已有演员时不应触发兜底")
+	})
+
+	t.Run("SkipWhenNumberEmpty", func(t *testing.T) {
+		fallback := &fakeNumberProvider{info: &model.MovieInfo{Actors: []string{"JavDB演员"}}}
+		fz := New()
+		fz.SetActorFallbackProvider(fallback)
+
+		info := &model.MovieInfo{}
+		fz.fillActorsFromFallback(info)
+		assert.Empty(t, info.Actors)
+		assert.Empty(t, fallback.got, "没有番号时不应触发兜底")
+	})
 }
