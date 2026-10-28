@@ -278,3 +278,176 @@ func TestTruncationIsReported(t *testing.T) {
 	assert.Error(t, err, "truncated response must not be reported as success")
 	assert.ErrorContains(t, err, "truncated by max_completion_tokens")
 }
+
+// TestPromptModeSingleOmitsSystemMessage pins the hy-mt2 layout: exactly one
+// user message, no system message, instruction merged with the source text.
+func TestPromptModeSingleOmitsSystemMessage(t *testing.T) {
+	srv, captured := newMockServer(t, "stop")
+
+	_, err := (&OpenAI{
+		APIKey: "k", APIUrl: srv.URL, Model: "kaelri/hy-mt2:7b",
+		PromptMode: PromptModeSingle,
+	}).Translate("こんにちは", "ja", "zh-CN")
+	assert.NoError(t, err)
+
+	var body struct {
+		Messages []struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"messages"`
+	}
+	if !assert.NoError(t, json.Unmarshal(*captured, &body)) {
+		t.Fatalf("request body is not JSON: %s", *captured)
+	}
+	if !assert.Len(t, body.Messages, 1) {
+		return
+	}
+	assert.Equal(t, "user", body.Messages[0].Role)
+	assert.Contains(t, body.Messages[0].Content,
+		"Translate the following segment into Chinese, without additional explanation.")
+	assert.Contains(t, body.Messages[0].Content, "こんにちは")
+}
+
+// TestPromptModeSystemSingleKeepsSystem proves the middle ground keeps the
+// system prompt but still merges instruction and text.
+func TestPromptModeSystemSingleKeepsSystem(t *testing.T) {
+	srv, captured := newMockServer(t, "stop")
+
+	_, err := (&OpenAI{
+		APIKey: "k", APIUrl: srv.URL, Model: "m",
+		PromptMode: PromptModeSystemSingle, Prompt: "custom system",
+	}).Translate("hello", "auto", "en")
+	assert.NoError(t, err)
+
+	var body struct {
+		Messages []struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"messages"`
+	}
+	if !assert.NoError(t, json.Unmarshal(*captured, &body)) {
+		return
+	}
+	if !assert.Len(t, body.Messages, 2) {
+		return
+	}
+	assert.Equal(t, "system", body.Messages[0].Role)
+	assert.Equal(t, "custom system", body.Messages[0].Content)
+	assert.Equal(t, "user", body.Messages[1].Role)
+}
+
+// TestPromptModeUpgradesToGoOpenAI keeps a non-default layout working even when
+// the caller left the translator at its legacy default.
+func TestPromptModeUpgradesToGoOpenAI(t *testing.T) {
+	srv, captured := newMockServer(t, "stop")
+
+	_, err := (&OpenAI{
+		APIKey: "k", APIUrl: srv.URL, Model: "m", PromptMode: PromptModeSingle,
+	}).Translate("hello", "auto", "en")
+	assert.NoError(t, err)
+
+	var body map[string]any
+	if !assert.NoError(t, json.Unmarshal(*captured, &body)) {
+		return
+	}
+	assert.Len(t, body["messages"], 1, "single mode must not fall back to the legacy 3-message layout")
+	assert.Equal(t, float64(4096), body["max_completion_tokens"],
+		"legacy path would have forced 1000")
+}
+
+// TestUnknownPromptModeRejected mirrors the translator-name validation.
+func TestUnknownPromptModeRejected(t *testing.T) {
+	_, err := (&OpenAI{
+		APIKey: "k", APIUrl: "http://127.0.0.1:1", Model: "m", PromptMode: "merged",
+	}).Translate("hello", "auto", "en")
+	assert.ErrorContains(t, err, "unknown prompt mode")
+}
+
+// TestReasoningEffortIsForwarded covers the Qwen3-family requirement: without
+// reasoning_effort=none the whole budget is spent on hidden reasoning.
+func TestReasoningEffortIsForwarded(t *testing.T) {
+	srv, captured := newMockServer(t, "stop")
+
+	_, err := (&OpenAI{
+		APIKey: "k", APIUrl: srv.URL, Model: "qwen3.5:9b",
+		Translator: TranslatorGoOpenAI, ReasoningEffort: "none",
+	}).Translate("hello", "auto", "zh-CN")
+	assert.NoError(t, err)
+
+	var body map[string]any
+	if !assert.NoError(t, json.Unmarshal(*captured, &body)) {
+		return
+	}
+	assert.Equal(t, "none", body["reasoning_effort"])
+}
+
+// TestReasoningEffortAbsentByDefault keeps non-reasoning providers untouched.
+func TestReasoningEffortAbsentByDefault(t *testing.T) {
+	srv, captured := newMockServer(t, "stop")
+
+	_, err := (&OpenAI{
+		APIKey: "k", APIUrl: srv.URL, Model: "m", Translator: TranslatorGoOpenAI,
+	}).Translate("hello", "auto", "en")
+	assert.NoError(t, err)
+
+	var body map[string]any
+	if !assert.NoError(t, json.Unmarshal(*captured, &body)) {
+		return
+	}
+	_, exists := body["reasoning_effort"]
+	assert.False(t, exists)
+}
+
+// TestCustomInstructionPlaceholders verifies {target}/{source} substitution.
+func TestCustomInstructionPlaceholders(t *testing.T) {
+	srv, captured := newMockServer(t, "stop")
+
+	_, err := (&OpenAI{
+		APIKey: "k", APIUrl: srv.URL, Model: "m",
+		PromptMode: PromptModeSingle,
+		Instruction: "Render the {source} text below as {target}, nothing else.",
+	}).Translate("hello", "en", "zh-CN")
+	assert.NoError(t, err)
+
+	var body struct {
+		Messages []struct {
+			Content string `json:"content"`
+		} `json:"messages"`
+	}
+	if !assert.NoError(t, json.Unmarshal(*captured, &body)) {
+		return
+	}
+	if !assert.Len(t, body.Messages, 1) {
+		return
+	}
+	assert.Contains(t, body.Messages[0].Content, "Render the English text below as Chinese, nothing else.")
+}
+
+// TestControlTokensStripped covers the mangled stop list in the hy-mt2 GGUF:
+// the terminator reaches the client and must never surface as a translation.
+func TestControlTokensStripped(t *testing.T) {
+	for _, unit := range []struct{ in, want string }{
+		{"译文内容<|hy-Assistant|>", "译文内容"},
+		{"译文内容<｜hy_end▁of▁sentence｜>", "译文内容"},
+		{"译文内容<\ufffd|hy-Assistant\ufffd|>", "译文内容"},
+		{"译文内容<|endoftext|>尾巴", "译文内容尾巴"},
+		{"  正常译文  ", "正常译文"},
+	} {
+		assert.Equal(t, unit.want, stripControlTokens(unit.in), "input %q", unit.in)
+	}
+}
+
+// TestCannedReplyRejected stops translation-only models from poisoning the
+// library with "已为您完成翻译。" when the input is not a sentence.
+func TestCannedReplyRejected(t *testing.T) {
+	_, err := validateResult("已为您完成翻译。")
+	assert.ErrorContains(t, err, "non-translation reply")
+
+	_, err = validateResult("")
+	assert.ErrorContains(t, err, "empty translation result")
+
+	// A genuine translation that merely contains the word 翻译 must pass.
+	got, err := validateResult("这是一段很长很长的译文，里面提到了翻译这件事，但绝不是空转回复。")
+	assert.NoError(t, err)
+	assert.NotEmpty(t, got)
+}

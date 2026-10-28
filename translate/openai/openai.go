@@ -33,6 +33,30 @@ const (
 	TranslatorGoOpenAI = "go-openai"
 )
 
+// Chat message layouts. Local translation-only models (Hunyuan-MT / hy-mt2,
+// NLLB-style fine-tunes, ...) are not chat models: their Ollama template has no
+// system slot, so a system message either gets folded into the user turn or
+// derails the model into writing an explanation instead of a translation.
+const (
+	// PromptModeDefault keeps the historical layout: a system message, an
+	// instruction message and the source text as three separate messages.
+	PromptModeDefault = "default"
+
+	// PromptModeSingle sends exactly one user message holding the instruction
+	// followed by the source text, and omits the system message entirely.
+	// This is the layout Hunyuan-MT expects.
+	PromptModeSingle = "single"
+
+	// PromptModeSystemSingle keeps the system message but merges instruction
+	// and source text into a single user message. Useful for chat models that
+	// split badly when the source text arrives in its own turn.
+	PromptModeSystemSingle = "system-single"
+)
+
+// defaultSingleInstruction is the phrasing Hunyuan-MT was trained on. Chinese
+// instructions make hy-mt2 return an empty completion, so keep it English.
+const defaultSingleInstruction = "Translate the following segment into {target}, without additional explanation."
+
 type OpenAI struct {
 	APIKey string `json:"openai-api-key"`
 	APIUrl string `json:"openai-api-url"`
@@ -58,6 +82,25 @@ type OpenAI struct {
 	// <= 0 fall back to DefaultMaxCompletionTokens. It is ignored by the
 	// openai-translator implementation.
 	MaxCompletionTokens int `json:"openai-max-completion-tokens"`
+
+	// PromptMode selects the chat message layout: "default" (system +
+	// instruction + text, the historical behavior), "single" (one merged user
+	// message, no system message) or "system-single" (system + one merged user
+	// message). Non-default modes always run on the go-openai implementation
+	// because the legacy library cannot control the message layout.
+	PromptMode string `json:"openai-prompt-mode"`
+
+	// Instruction overrides the instruction line sent to the model. It may
+	// reference {target} and {source} (English language names); the source text
+	// is always appended afterwards and must not be included here. Empty means
+	// the built-in wording for the active PromptMode.
+	Instruction string `json:"openai-instruction"`
+
+	// ReasoningEffort is forwarded as the OpenAI "reasoning_effort" field.
+	// Hybrid-reasoning models (Qwen3 and later) spend the whole token budget on
+	// hidden reasoning and return an empty content otherwise, so "none" is
+	// required to make them behave like plain translators.
+	ReasoningEffort string `json:"openai-reasoning-effort"`
 }
 
 // Translate dispatches to the configured OpenAI client implementation.
@@ -66,10 +109,32 @@ func (oa *OpenAI) Translate(q, source, target string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if kind == TranslatorGoOpenAI {
-		return oa.translateWithGoOpenAI(q, source, target)
+	mode, err := resolvePromptMode(oa.PromptMode)
+	if err != nil {
+		return "", err
+	}
+	// The legacy library hard-codes its own message layout, so a non-default
+	// layout can only be honored on the go-openai path. Upgrade silently rather
+	// than ignoring the setting, which would look like a broken configuration.
+	if kind == TranslatorGoOpenAI || mode != PromptModeDefault {
+		return oa.translateWithGoOpenAI(q, source, target, mode)
 	}
 	return oa.translateWithOpenAITranslator(q, source, target)
+}
+
+// resolvePromptMode validates and canonicalizes the configured layout.
+func resolvePromptMode(name string) (string, error) {
+	switch normalizeTranslatorName(name) {
+	case "", "default", "chat":
+		return PromptModeDefault, nil
+	case "single", "usersingle":
+		return PromptModeSingle, nil
+	case "systemsingle", "system":
+		return PromptModeSystemSingle, nil
+	default:
+		return "", fmt.Errorf("openai: unknown prompt mode %q (supported: %q, %q, %q)",
+			name, PromptModeDefault, PromptModeSingle, PromptModeSystemSingle)
+	}
 }
 
 // resolveTranslator validates and canonicalizes the configured translator name.
