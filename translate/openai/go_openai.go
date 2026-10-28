@@ -39,20 +39,18 @@ func (oa *OpenAI) translateWithGoOpenAI(q, source, target, mode string) (string,
 		}
 	}
 
-	// go-openai tags Temperature with omitempty, so an explicit 0 (greedy
-	// decoding) would be dropped from the body entirely. Patch it on the wire
-	// instead, overriding whatever the struct serialized.
-	var override map[string]json.RawMessage
+	// go-openai tags Temperature with omitempty, so 0 never reaches the wire on
+	// its own. Fold it into the patched body; when the same key also appears in
+	// ExtraParams, this dedicated field wins.
 	if oa.Temperature != nil {
-		override = map[string]json.RawMessage{
-			"temperature": json.RawMessage(strconv.FormatFloat(*oa.Temperature, 'f', -1, 64)),
+		if extra == nil {
+			extra = make(map[string]json.RawMessage, 1)
 		}
+		extra["temperature"] = json.RawMessage(strconv.FormatFloat(*oa.Temperature, 'f', -1, 64))
 	}
 
-	if len(extra) > 0 || len(override) > 0 {
-		config.HTTPClient = &bodyPatchClient{
-			inner: config.HTTPClient, extra: extra, override: override,
-		}
+	if len(extra) > 0 {
+		config.HTTPClient = &bodyPatchClient{inner: config.HTTPClient, extra: extra}
 	}
 
 	maxCompletionTokens := oa.MaxCompletionTokens
@@ -189,14 +187,11 @@ func validateResult(s string) (string, error) {
 // bodyPatchClient merges extra JSON fields into the outgoing request body.
 // go-openai's ChatCompletionRequest has no generic extension field, so
 // vendor-specific switches (enable_thinking, thinking, ...) are injected
-// on the wire instead.
+// on the wire instead. It is also how an explicit temperature of 0 survives:
+// that field is tagged omitempty, so the struct never serializes it.
 type bodyPatchClient struct {
 	inner openai.HTTPDoer
 	extra map[string]json.RawMessage
-	// override always wins, including over fields the struct already
-	// serialized. Used for values go-openai cannot express because of
-	// omitempty (temperature: 0).
-	override map[string]json.RawMessage
 }
 
 func (c *bodyPatchClient) Do(req *http.Request) (*http.Response, error) {
@@ -218,10 +213,6 @@ func (c *bodyPatchClient) Do(req *http.Request) (*http.Response, error) {
 		return c.inner.Do(req)
 	}
 
-	// Explicit overrides win, even over what the struct produced.
-	for key, value := range c.override {
-		payload[key] = value
-	}
 	// Never overwrite a field the request already set explicitly.
 	for key, value := range c.extra {
 		if _, exists := payload[key]; !exists {

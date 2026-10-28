@@ -107,6 +107,12 @@ type OpenAI struct {
 	// "not configured": local models at their default temperature return a
 	// different answer on every call, which makes actress names and tags
 	// unusable. Set 0 for reproducible output.
+	//
+	// This is a convenience wrapper, not a separate capability: ExtraParams
+	// can express the same thing ({"temperature": 0}) because go-openai tags
+	// the field omitempty. The dedicated field exists so the plugin UI can
+	// offer a number box instead of a raw JSON blob, and so it wins when both
+	// are configured.
 	Temperature *float64 `json:"openai-temperature"`
 }
 
