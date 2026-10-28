@@ -451,3 +451,94 @@ func TestCannedReplyRejected(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotEmpty(t, got)
 }
+
+func floatPtr(f float64) *float64 { return &f }
+
+// TestTemperatureZeroReachesWire is the whole point of the override path:
+// go-openai tags Temperature with omitempty, so 0 would otherwise vanish and
+// the model would keep sampling randomly.
+func TestTemperatureZeroReachesWire(t *testing.T) {
+	srv, captured := newMockServer(t, "stop")
+
+	_, err := (&OpenAI{
+		APIKey: "k", APIUrl: srv.URL, Model: "qwen3.5:9b",
+		Temperature: floatPtr(0),
+	}).Translate("hello", "auto", "zh-CN")
+	assert.NoError(t, err)
+
+	var body map[string]any
+	if !assert.NoError(t, json.Unmarshal(*captured, &body)) {
+		t.Fatalf("request body is not JSON: %s", *captured)
+	}
+	assert.Equal(t, float64(0), body["temperature"],
+		"explicit temperature 0 must survive omitempty")
+}
+
+// TestTemperatureOverridesExtraParams pins the precedence: the dedicated field
+// wins over an ExtraParams entry with the same key.
+func TestTemperatureOverridesExtraParams(t *testing.T) {
+	srv, captured := newMockServer(t, "stop")
+
+	_, err := (&OpenAI{
+		APIKey: "k", APIUrl: srv.URL, Model: "m",
+		Translator:  TranslatorGoOpenAI,
+		ExtraParams: `{"temperature": 0.9, "enable_thinking": false}`,
+		Temperature: floatPtr(0),
+	}).Translate("hello", "auto", "en")
+	assert.NoError(t, err)
+
+	var body map[string]any
+	if !assert.NoError(t, json.Unmarshal(*captured, &body)) {
+		return
+	}
+	assert.Equal(t, float64(0), body["temperature"])
+	assert.Equal(t, false, body["enable_thinking"])
+}
+
+// TestTemperatureAbsentByDefault leaves non-configured providers untouched.
+func TestTemperatureAbsentByDefault(t *testing.T) {
+	srv, captured := newMockServer(t, "stop")
+
+	_, err := (&OpenAI{
+		APIKey: "k", APIUrl: srv.URL, Model: "m", Translator: TranslatorGoOpenAI,
+	}).Translate("hello", "auto", "en")
+	assert.NoError(t, err)
+
+	var body map[string]any
+	if !assert.NoError(t, json.Unmarshal(*captured, &body)) {
+		return
+	}
+	_, exists := body["temperature"]
+	assert.False(t, exists, "temperature must be absent when not configured")
+}
+
+// TestTemperatureUpgradesToGoOpenAI keeps the legacy library's hard-coded 0.1
+// from silently overriding the caller's choice.
+func TestTemperatureUpgradesToGoOpenAI(t *testing.T) {
+	srv, captured := newMockServer(t, "stop")
+
+	_, err := (&OpenAI{
+		APIKey: "k", APIUrl: srv.URL, Model: "m", Temperature: floatPtr(0),
+	}).Translate("hello", "auto", "en")
+	assert.NoError(t, err)
+
+	var body map[string]any
+	if !assert.NoError(t, json.Unmarshal(*captured, &body)) {
+		return
+	}
+	assert.Equal(t, float64(0), body["temperature"])
+	assert.Equal(t, float64(4096), body["max_completion_tokens"],
+		"legacy path would have forced 1000")
+}
+
+// TestTemperatureBindsFromRouteQuery proves the plugin can pass it as a query
+// parameter, including the 0 that schema decoding must not treat as empty.
+func TestTemperatureBindsFromRouteQuery(t *testing.T) {
+	target := decodeViaRoute(t,
+		"q=hello&from=auto&to=zh-CN&engine=OpenAi&openai-temperature=0")
+
+	if !assert.NotNil(t, target.Temperature) {
+		return
+	}
+	assert.Equal(t, float64(0), *target.Temperature)
+}

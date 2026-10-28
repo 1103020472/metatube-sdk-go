@@ -101,6 +101,13 @@ type OpenAI struct {
 	// hidden reasoning and return an empty content otherwise, so "none" is
 	// required to make them behave like plain translators.
 	ReasoningEffort string `json:"openai-reasoning-effort"`
+
+	// Temperature is forwarded as the OpenAI "temperature" field. It is a
+	// pointer so that an explicit 0 (greedy decoding) is distinguishable from
+	// "not configured": local models at their default temperature return a
+	// different answer on every call, which makes actress names and tags
+	// unusable. Set 0 for reproducible output.
+	Temperature *float64 `json:"openai-temperature"`
 }
 
 // Translate dispatches to the configured OpenAI client implementation.
@@ -113,10 +120,11 @@ func (oa *OpenAI) Translate(q, source, target string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// The legacy library hard-codes its own message layout, so a non-default
-	// layout can only be honored on the go-openai path. Upgrade silently rather
-	// than ignoring the setting, which would look like a broken configuration.
-	if kind == TranslatorGoOpenAI || mode != PromptModeDefault {
+	// The legacy library hard-codes its own message layout and temperature
+	// (0.1), so these settings can only be honored on the go-openai path.
+	// Upgrade silently rather than ignoring them, which would look like a
+	// broken configuration.
+	if kind == TranslatorGoOpenAI || mode != PromptModeDefault || oa.Temperature != nil {
 		return oa.translateWithGoOpenAI(q, source, target, mode)
 	}
 	return oa.translateWithOpenAITranslator(q, source, target)

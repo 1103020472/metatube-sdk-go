@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 
 	openai "github.com/sashabaranov/go-openai"
@@ -36,8 +37,21 @@ func (oa *OpenAI) translateWithGoOpenAI(q, source, target, mode string) (string,
 		if err := json.Unmarshal([]byte(oa.ExtraParams), &extra); err != nil {
 			return "", fmt.Errorf("openai: invalid extra params JSON: %w", err)
 		}
-		if len(extra) > 0 {
-			config.HTTPClient = &bodyPatchClient{inner: config.HTTPClient, extra: extra}
+	}
+
+	// go-openai tags Temperature with omitempty, so an explicit 0 (greedy
+	// decoding) would be dropped from the body entirely. Patch it on the wire
+	// instead, overriding whatever the struct serialized.
+	var override map[string]json.RawMessage
+	if oa.Temperature != nil {
+		override = map[string]json.RawMessage{
+			"temperature": json.RawMessage(strconv.FormatFloat(*oa.Temperature, 'f', -1, 64)),
+		}
+	}
+
+	if len(extra) > 0 || len(override) > 0 {
+		config.HTTPClient = &bodyPatchClient{
+			inner: config.HTTPClient, extra: extra, override: override,
 		}
 	}
 
@@ -179,6 +193,10 @@ func validateResult(s string) (string, error) {
 type bodyPatchClient struct {
 	inner openai.HTTPDoer
 	extra map[string]json.RawMessage
+	// override always wins, including over fields the struct already
+	// serialized. Used for values go-openai cannot express because of
+	// omitempty (temperature: 0).
+	override map[string]json.RawMessage
 }
 
 func (c *bodyPatchClient) Do(req *http.Request) (*http.Response, error) {
@@ -200,6 +218,10 @@ func (c *bodyPatchClient) Do(req *http.Request) (*http.Response, error) {
 		return c.inner.Do(req)
 	}
 
+	// Explicit overrides win, even over what the struct produced.
+	for key, value := range c.override {
+		payload[key] = value
+	}
 	// Never overwrite a field the request already set explicitly.
 	for key, value := range c.extra {
 		if _, exists := payload[key]; !exists {
