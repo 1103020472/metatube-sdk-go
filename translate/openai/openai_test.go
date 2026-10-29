@@ -303,9 +303,88 @@ func TestPromptModeSingleOmitsSystemMessage(t *testing.T) {
 		return
 	}
 	assert.Equal(t, "user", body.Messages[0].Role)
+	// Both languages are named: a bare "into Chinese" lets the model keep
+	// writing Japanese on long inputs (see defaultSingleInstruction).
 	assert.Contains(t, body.Messages[0].Content,
-		"Translate the following segment into Chinese, without additional explanation.")
+		"Translate the following Japanese text into Simplified Chinese, without additional explanation.")
 	assert.Contains(t, body.Messages[0].Content, "こんにちは")
+}
+
+// TestPromptModeSingleNamesSourceLanguage pins the fix for language drift:
+// the single-message layout must state which language the text is in.
+func TestPromptModeSingleNamesSourceLanguage(t *testing.T) {
+	srv, captured := newMockServer(t, "stop")
+
+	_, err := (&OpenAI{
+		APIKey: "k", APIUrl: srv.URL, Model: "qwen3.5:9b",
+		PromptMode: PromptModeSingle,
+	}).Translate("こんにちは", "ja", "zh-CN")
+	assert.NoError(t, err)
+
+	var body struct {
+		Messages []struct {
+			Content string `json:"content"`
+		} `json:"messages"`
+	}
+	if !assert.NoError(t, json.Unmarshal(*captured, &body)) {
+		return
+	}
+	if !assert.Len(t, body.Messages, 1) {
+		return
+	}
+	assert.Contains(t, body.Messages[0].Content, "Translate the following Japanese text")
+	assert.Contains(t, body.Messages[0].Content, "into Simplified Chinese")
+}
+
+// TestPromptModeSingleFallsBackWhenSourceUnknown keeps the old wording when the
+// plugin could not detect the source language.
+func TestPromptModeSingleFallsBackWhenSourceUnknown(t *testing.T) {
+	srv, captured := newMockServer(t, "stop")
+
+	_, err := (&OpenAI{
+		APIKey: "k", APIUrl: srv.URL, Model: "m", PromptMode: PromptModeSingle,
+	}).Translate("hello", "auto", "zh-CN")
+	assert.NoError(t, err)
+
+	var body struct {
+		Messages []struct {
+			Content string `json:"content"`
+		} `json:"messages"`
+	}
+	if !assert.NoError(t, json.Unmarshal(*captured, &body)) {
+		return
+	}
+	if !assert.Len(t, body.Messages, 1) {
+		return
+	}
+	assert.Contains(t, body.Messages[0].Content,
+		"Translate the following segment into Simplified Chinese, without additional explanation.")
+}
+
+// TestDefaultModeNamesSimplifiedChinese covers the three-message layout, where
+// only the target name was ambiguous.
+func TestDefaultModeNamesSimplifiedChinese(t *testing.T) {
+	srv, captured := newMockServer(t, "stop")
+
+	_, err := (&OpenAI{
+		APIKey: "k", APIUrl: srv.URL, Model: "m", Translator: TranslatorGoOpenAI,
+	}).Translate("こんにちは", "ja", "zh-CN")
+	assert.NoError(t, err)
+
+	var body struct {
+		Messages []struct {
+			Content string `json:"content"`
+		} `json:"messages"`
+	}
+	if !assert.NoError(t, json.Unmarshal(*captured, &body)) {
+		return
+	}
+	if !assert.Len(t, body.Messages, 3) {
+		return
+	}
+	assert.Equal(t,
+		"Please translate the following text from Japanese to Simplified Chinese:",
+		body.Messages[1].Content)
 }
 
 // TestPromptModeSystemSingleKeepsSystem proves the middle ground keeps the
@@ -420,7 +499,7 @@ func TestCustomInstructionPlaceholders(t *testing.T) {
 	if !assert.Len(t, body.Messages, 1) {
 		return
 	}
-	assert.Contains(t, body.Messages[0].Content, "Render the English text below as Chinese, nothing else.")
+	assert.Contains(t, body.Messages[0].Content, "Render the English text below as Simplified Chinese, nothing else.")
 }
 
 // TestControlTokensStripped covers the mangled stop list in the hy-mt2 GGUF:
@@ -440,14 +519,47 @@ func TestControlTokensStripped(t *testing.T) {
 // TestCannedReplyRejected stops translation-only models from poisoning the
 // library with "已为您完成翻译。" when the input is not a sentence.
 func TestCannedReplyRejected(t *testing.T) {
-	_, err := validateResult("已为您完成翻译。")
+	_, err := validateResult("已为您完成翻译。", "zh-CN")
 	assert.ErrorContains(t, err, "non-translation reply")
 
-	_, err = validateResult("")
+	_, err = validateResult("", "zh-CN")
 	assert.ErrorContains(t, err, "empty translation result")
 
 	// A genuine translation that merely contains the word 翻译 must pass.
-	got, err := validateResult("这是一段很长很长的译文，里面提到了翻译这件事，但绝不是空转回复。")
+	got, err := validateResult("这是一段很长很长的译文，里面提到了翻译这件事，但绝不是空转回复。", "zh-CN")
+	assert.NoError(t, err)
+	assert.NotEmpty(t, got)
+}
+
+// TestLanguageDriftRejected covers the real failure this check exists for:
+// asked for Chinese, qwen3.5 returned the Japanese input lightly reworded.
+func TestLanguageDriftRejected(t *testing.T) {
+	drifted := "出身地は地方。F カップ女優・石原希望の AV デビュー第 4 弾。ただし、2 作目以降の 3 本" +
+		"（『本中』『kawaii』『ダスッ!』）の発売日がすべて同じため、「AV デビュー第 2 弾」とするのが正確。" +
+		"<br><br>👤 絶対零度 · 2020-07-10 10:08<br><b>[[S5]] 見出し</b>"
+
+	_, err := validateResult(drifted, "zh-CN")
+	assert.ErrorContains(t, err, "still in the source language")
+
+	// Traditional Chinese targets are checked too.
+	_, err = validateResult(drifted, "zh-TW")
+	assert.ErrorContains(t, err, "still in the source language")
+
+	// Non-Chinese targets must not be flagged: a Japanese translation is fine.
+	got, err := validateResult(drifted, "ja")
+	assert.NoError(t, err)
+	assert.NotEmpty(t, got)
+}
+
+// TestLanguageDriftAllowsKeptNames makes sure the check tolerates what the
+// prompt explicitly permits: reviewer nicknames and titles kept verbatim.
+func TestLanguageDriftAllowsKeptNames(t *testing.T) {
+	ok := "👤 び〜さくくん。 · 2020-06-22 10:21<br>" +
+		"👤 アララギ先輩 · 2021-07-26 15:15<br>" +
+		"<b>⭐⭐⭐⭐⭐ 制服</b><br>" +
+		"这部作品的演技非常自然，值得一看。石原希望的表演让人印象深刻，剧情推进也很流畅。" +
+		"<br>两人之间的互动真实到令人信服，导演对细节的把控相当到位。"
+	got, err := validateResult(ok, "zh-CN")
 	assert.NoError(t, err)
 	assert.NotEmpty(t, got)
 }

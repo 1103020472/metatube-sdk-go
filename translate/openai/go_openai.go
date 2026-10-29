@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	openai "github.com/sashabaranov/go-openai"
 	"golang.org/x/text/language"
@@ -78,7 +79,7 @@ func (oa *OpenAI) translateWithGoOpenAI(q, source, target, mode string) (string,
 		// Surface truncation instead of silently returning partial text.
 		return "", fmt.Errorf("openai: response truncated by max_completion_tokens (%d)", maxCompletionTokens)
 	}
-	return validateResult(stripControlTokens(resp.Choices[0].Message.Content))
+	return validateResult(stripControlTokens(resp.Choices[0].Message.Content), target)
 }
 
 // buildMessages renders the request messages for the configured layout.
@@ -129,13 +130,22 @@ func (oa *OpenAI) renderInstruction(source, target, mode string) string {
 		).Replace(custom)
 	}
 
+	known := sourceName != "" && sourceName != "auto"
+
 	if mode == PromptModeDefault {
-		if sourceName == "" || sourceName == "auto" {
+		if !known {
 			return fmt.Sprintf("Please translate the following text into %s:", targetName)
 		}
 		return fmt.Sprintf("Please translate the following text from %s to %s:", sourceName, targetName)
 	}
-	return strings.ReplaceAll(defaultSingleInstruction, "{target}", targetName)
+
+	if !known {
+		return strings.ReplaceAll(defaultSingleInstructionNoSource, "{target}", targetName)
+	}
+	return strings.NewReplacer(
+		"{target}", targetName,
+		"{source}", sourceName,
+	).Replace(defaultSingleInstruction)
 }
 
 // controlTokenRe matches leaked model control tokens such as <|hy-Assistant|>,
@@ -169,8 +179,81 @@ var nonTranslationReplies = []string{
 	"已翻译完成",
 }
 
-// validateResult rejects empty completions and canned non-translations.
-func validateResult(s string) (string, error) {
+// Language-drift detection.
+//
+// A local model occasionally loses track of the requested target language and
+// keeps writing in the source language: asked for Chinese it returns the
+// Japanese input lightly reworded (「」→『』, ４→4, sentences paraphrased).
+// The result is not empty and not a canned reply, so nothing downstream would
+// notice — the untranslated block simply gets written into the media library.
+// These helpers reject that output so the caller can retry or fall back.
+var (
+	// kanaRe matches hiragana and katakana. They are unique to Japanese:
+	// Chinese output never contains them apart from stray proper nouns.
+	kanaRe = regexp.MustCompile(`[\x{3040}-\x{309F}\x{30A0}-\x{30FF}]`)
+	// letterRe counts the letters a line is actually made of, so the kana
+	// ratio is not diluted by punctuation, digits or HTML.
+	letterRe = regexp.MustCompile(`[0-9A-Za-z\x{3040}-\x{309F}\x{30A0}-\x{30FF}\x{4E00}-\x{9FFF}]`)
+	tagRe    = regexp.MustCompile(`<[^>]*>`)
+	// lineSplitRe splits the completion the way the plugin renders it.
+	lineSplitRe = regexp.MustCompile(`<br\s*/?>|\r?\n`)
+)
+
+const (
+	// maxKanaRatio is the kana share above which a line counts as Japanese.
+	// Genuine Chinese translations sit below 0.05; a drifted line sits at 0.5+.
+	maxKanaRatio = 0.3
+	// minRunesForDriftCheck skips short fragments: names, tags, dates.
+	minRunesForDriftCheck = 15
+)
+
+// looksUntranslated reports whether one line of the completion is still
+// written in Japanese.
+func looksUntranslated(line string) bool {
+	text := strings.TrimSpace(tagRe.ReplaceAllString(line, ""))
+	// Author lines keep the reviewer's nickname verbatim, kana included.
+	if strings.HasPrefix(text, "👤") {
+		return false
+	}
+	if utf8.RuneCountInString(text) < minRunesForDriftCheck {
+		return false
+	}
+	letters := letterRe.FindAllString(text, -1)
+	if len(letters) == 0 {
+		return false
+	}
+	return float64(len(kanaRe.FindAllString(text, -1)))/float64(len(letters)) > maxKanaRatio
+}
+
+// isChineseTarget reports whether the target is any Chinese variant.
+func isChineseTarget(target string) bool {
+	t := strings.ToLower(strings.TrimSpace(target))
+	if t == "" {
+		return false
+	}
+	if _, ok := languageNames[t]; ok {
+		return strings.HasPrefix(t, "zh") || t == "chs" || t == "cht" || t == "wyw"
+	}
+	return strings.HasPrefix(t, "zh")
+}
+
+// detectLanguageDrift reports whether any line of the completion still looks
+// like Japanese while the caller asked for Chinese.
+func detectLanguageDrift(s, target string) bool {
+	if !isChineseTarget(target) {
+		return false
+	}
+	for _, line := range lineSplitRe.Split(s, -1) {
+		if looksUntranslated(line) {
+			return true
+		}
+	}
+	return false
+}
+
+// validateResult rejects empty completions, canned non-translations and
+// output that never left the source language.
+func validateResult(s, target string) (string, error) {
 	if s == "" {
 		return "", fmt.Errorf("openai: empty translation result")
 	}
@@ -180,6 +263,11 @@ func validateResult(s string) (string, error) {
 				return "", fmt.Errorf("openai: model returned a non-translation reply %q", s)
 			}
 		}
+	}
+	if detectLanguageDrift(s, target) {
+		return "", fmt.Errorf(
+			"openai: output is still in the source language despite target %q; refusing to write an untranslated result",
+			target)
 	}
 	return s, nil
 }
@@ -233,18 +321,26 @@ func (c *bodyPatchClient) Do(req *http.Request) (*http.Response, error) {
 
 // languageNames holds codes whose display name differs from what the
 // language package would produce (or that it cannot parse at all).
-// The zh-* entries matter: display.Tags renders zh-CN as "Chinese (China)",
-// while translation-only models (Hunyuan-MT / hy-mt2) were trained on the bare
-// "Chinese" phrasing and degrade when given the region suffix.
+//
+// The zh-* entries matter twice over:
+//   - display.Tags renders zh-CN as "Chinese (China)", and translation-only
+//     models (Hunyuan-MT / hy-mt2) were trained on the bare "Chinese" phrasing,
+//     so the region suffix has to go;
+//   - the bare word "Chinese" is nonetheless ambiguous for chat models. Asked to
+//     translate a long Japanese paragraph into "Chinese", qwen3.5 sometimes
+//     rewrites it in Japanese instead. Naming the script ("Simplified Chinese")
+//     removes that ambiguity, so every zh-* variant maps to a script name.
+//
+// Bare "zh" stays "Chinese": it genuinely does not say which script is wanted.
 var languageNames = map[string]string{
 	"wyw":     "中文（古文-文言文）",
 	"chs":     "Simplified Chinese",
 	"cht":     "Traditional Chinese",
 	"zh":      "Chinese",
-	"zh-cn":   "Chinese",
-	"zh-hans": "Chinese",
-	"zh-sg":   "Chinese",
-	"zh-my":   "Chinese",
+	"zh-cn":   "Simplified Chinese",
+	"zh-hans": "Simplified Chinese",
+	"zh-sg":   "Simplified Chinese",
+	"zh-my":   "Simplified Chinese",
 	"zh-tw":   "Traditional Chinese",
 	"zh-hk":   "Traditional Chinese",
 	"zh-mo":   "Traditional Chinese",

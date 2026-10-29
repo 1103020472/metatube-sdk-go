@@ -55,7 +55,20 @@ const (
 
 // defaultSingleInstruction is the phrasing Hunyuan-MT was trained on. Chinese
 // instructions make hy-mt2 return an empty completion, so keep it English.
-const defaultSingleInstruction = "Translate the following segment into {target}, without additional explanation."
+//
+// Naming the source language is not cosmetic. A bare "Translate the following
+// segment into Chinese" leaves the model free to treat a long Japanese
+// paragraph as *text to polish*: qwen3.5 then rewrites it in cleaner Japanese
+// (「」→『』, ４→4, reworded sentences) instead of translating it, and the
+// untranslated block lands in the media library. With the source named the
+// model commits to a ja→zh mapping and the failure disappears.
+const defaultSingleInstruction = "Translate the following {source} text into {target}, without additional explanation."
+
+// defaultSingleInstructionNoSource is used when the caller could not determine
+// the source language ("auto"). Naming the target is still required: with the
+// bare word "Chinese" the same model happily keeps writing Japanese, while
+// "Simplified Chinese" pins the output script.
+const defaultSingleInstructionNoSource = "Translate the following segment into {target}, without additional explanation."
 
 type OpenAI struct {
 	APIKey string `json:"openai-api-key"`
