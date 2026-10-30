@@ -22,6 +22,33 @@ func TestDUGA_SearchMovie(t *testing.T) {
 	})
 }
 
+func TestDUGA_GetMovieReviewsByID(t *testing.T) {
+	testkit.Test(t, New, []string{
+		"maniac-0031", // 15 reviews, spans two pages.
+	})
+}
+
+func TestDUGA_GetMovieReviewsByURL(t *testing.T) {
+	testkit.Test(t, New, []string{
+		"https://duga.jp/ppv/glory-4262/",
+	})
+}
+
+func TestReviewTotalRegexp(t *testing.T) {
+	for _, c := range []struct {
+		in   string
+		want string
+	}{
+		{"1～10件 / 全15件", "15"},
+		{"1～1件 / 全1件", "1"},
+		{"1～3件 / 全 3 件", "3"},
+	} {
+		ss := reviewTotalRegexp.FindStringSubmatch(c.in)
+		assert.Len(t, ss, 2, c.in)
+		assert.Equal(t, c.want, ss[1], c.in)
+	}
+}
+
 func TestCanonicalNumber(t *testing.T) {
 	for _, c := range []struct{ in, want string }{
 		{"MIZD-398", "mizd398"},

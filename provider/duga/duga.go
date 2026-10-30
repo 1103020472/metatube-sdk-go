@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +24,7 @@ import (
 var (
 	_ provider.MovieProvider = (*DUGA)(nil)
 	_ provider.MovieSearcher = (*DUGA)(nil)
+	_ provider.MovieReviewer = (*DUGA)(nil)
 )
 
 const (
@@ -34,6 +36,25 @@ const (
 	baseURL   = "https://duga.jp/"
 	movieURL  = "https://duga.jp/ppv/%s/"
 	searchURL = "https://duga.jp/search/=/q=%s/"
+
+	// reviewPageURL is the "show all reviews" page of a product. The detail
+	// page only renders the newest review, the complete list lives here and
+	// needs no login.
+	//
+	// `viewtype=1` is the pay-per-view variant, i.e. the one addressed by
+	// movieURL; it is also what DUGA falls back to when the parameter is
+	// omitted, so passing it explicitly only pins down the behaviour.
+	reviewPageURL = "https://duga.jp/prog/showreview/?productid=%s&viewtype=1&page=%d"
+)
+
+const (
+	// reviewPageSize is the number of reviews DUGA renders per page.
+	reviewPageSize = 10
+
+	// maxReviewPages bounds the pagination loop. DUGA reviews are sparse --
+	// the most reviewed titles sampled so far stay below 20 -- so this is
+	// only a guard against a runaway loop, not a real limit.
+	maxReviewPages = 10
 )
 
 type DUGA struct {
@@ -213,6 +234,106 @@ func (duga *DUGA) GetMovieInfoByURL(rawURL string) (info *model.MovieInfo, err e
 
 	err = c.Visit(info.Homepage)
 	return
+}
+
+// GetMovieReviewsByID gets the user reviews of the given movie id.
+func (duga *DUGA) GetMovieReviewsByID(id string) ([]*model.MovieReviewDetail, error) {
+	return duga.getMovieReviews(id)
+}
+
+// GetMovieReviewsByURL gets the user reviews of the given movie URL.
+func (duga *DUGA) GetMovieReviewsByURL(rawURL string) ([]*model.MovieReviewDetail, error) {
+	id, err := duga.ParseMovieIDFromURL(rawURL)
+	if err != nil {
+		return nil, err
+	}
+	return duga.getMovieReviews(id)
+}
+
+func (duga *DUGA) getMovieReviews(id string) (reviews []*model.MovieReviewDetail, err error) {
+	if id = duga.NormalizeMovieID(strings.TrimSpace(id)); id == "" {
+		return nil, nil
+	}
+
+	var total int
+	c := duga.ClonedCollector()
+
+	// `paging-sum` is only rendered when the product actually has reviews,
+	// and it is the only reliable source for the total count: requesting an
+	// out-of-range page does not fail, DUGA simply renders the last page
+	// again, so "an empty page means we are done" does not hold here.
+	c.OnXML(`//div[@class="paging-sum"]`, func(e *colly.XMLElement) {
+		if ss := reviewTotalRegexp.FindStringSubmatch(e.Text); len(ss) == 2 {
+			total, _ = strconv.Atoi(ss[1])
+		}
+	})
+
+	c.OnXML(`//div[@class="userreview"]//div[@class="eachreview"]`, func(e *colly.XMLElement) {
+		author := strings.TrimSpace(e.ChildText(`.//div[@class="reviewer"]/a`))
+		if author == "" {
+			// Reviews written by deleted accounts render the name as
+			// plain text instead of a link.
+			author = strings.TrimSpace(strings.TrimPrefix(
+				strings.TrimSpace(e.ChildText(`.//div[@class="reviewer"]`)), "レビュアー："))
+		}
+		comment := strings.TrimSpace(e.ChildText(`.//p[@class="comment"]`))
+		if author == "" || comment == "" {
+			return
+		}
+
+		reviews = append(reviews, &model.MovieReviewDetail{
+			Title:   strings.TrimSpace(e.ChildText(`.//div[@class="title"]`)),
+			Author:  author,
+			Comment: comment,
+			Score:   parseReviewScore(e),
+			// The span text is the plain date (`2022年06月12日`), its title
+			// attribute carries the time as well but no parser handles that
+			// format.
+			Date: parser.ParseDate(e.ChildText(`.//div[@class="date"]/span`)),
+		})
+	})
+
+	if err = c.Visit(fmt.Sprintf(reviewPageURL, id, 1)); err != nil {
+		return nil, err
+	}
+
+	pages := (total + reviewPageSize - 1) / reviewPageSize
+	if pages > maxReviewPages {
+		pages = maxReviewPages
+	}
+	for page := 2; page <= pages; page++ {
+		if err = c.Visit(fmt.Sprintf(reviewPageURL, id, page)); err != nil {
+			return nil, err
+		}
+	}
+	return reviews, nil
+}
+
+// reviewTotalRegexp extracts the total review count from DUGA's pager, whose
+// text reads `1～10件 / 全15件`.
+var reviewTotalRegexp = regexp.MustCompile(`全\s*(\d+)\s*件`)
+
+// reviewScoreRegexp extracts the rating from DUGA's star image, whose URL ends
+// with e.g. `score/5.0.gif`.
+var reviewScoreRegexp = regexp.MustCompile(`score/(\d+(?:\.\d+)?)\.gif`)
+
+// parseReviewScore reads the 0-5 rating of a single review. The "show all
+// reviews" page only encodes it in the star image URL, while the detail page
+// also sets an alt attribute.
+func parseReviewScore(e *colly.XMLElement) float64 {
+	const img = `.//div[@class="ratingstar"]/img`
+
+	if alt := strings.TrimSpace(e.ChildAttr(img, "alt")); alt != "" {
+		if score, err := strconv.ParseFloat(alt, 64); err == nil {
+			return score
+		}
+	}
+	if ss := reviewScoreRegexp.FindStringSubmatch(e.ChildAttr(img, "src")); len(ss) == 2 {
+		if score, err := strconv.ParseFloat(ss[1], 64); err == nil {
+			return score
+		}
+	}
+	return 0
 }
 
 func (duga *DUGA) NormalizeMovieKeyword(keyword string) string {
