@@ -483,7 +483,7 @@ func TestCustomInstructionPlaceholders(t *testing.T) {
 
 	_, err := (&OpenAI{
 		APIKey: "k", APIUrl: srv.URL, Model: "m",
-		PromptMode: PromptModeSingle,
+		PromptMode:  PromptModeSingle,
 		Instruction: "Render the {source} text below as {target}, nothing else.",
 	}).Translate("hello", "en", "zh-CN")
 	assert.NoError(t, err)
@@ -562,6 +562,58 @@ func TestLanguageDriftAllowsKeptNames(t *testing.T) {
 	got, err := validateResult(ok, "zh-CN")
 	assert.NoError(t, err)
 	assert.NotEmpty(t, got)
+}
+
+// TestEnglishDriftRejected covers the other way a local model loses the
+// target: asked for Chinese it answers in English. That is what the old
+// `default` layout did, because its system prompt is written in English and
+// becomes the nearest attractor once the model loses the target anchor.
+func TestEnglishDriftRejected(t *testing.T) {
+	drifted := "This is easily the best scene of the whole movie, she really enjoys it and the camera work " +
+		"captures every moment.<br>" +
+		"The actress is amazing here, and you can tell she is having fun with it."
+	_, err := validateResult(drifted, "zh-CN")
+	assert.ErrorContains(t, err, "still in the source language")
+
+	// English is a legitimate target: nothing to flag.
+	got, err := validateResult(drifted, "en")
+	assert.NoError(t, err)
+	assert.NotEmpty(t, got)
+}
+
+// TestEnglishDriftAllowsLatinFragments pins the conservative side of the
+// check. Latin letters are perfectly normal inside a Chinese translation, so
+// a name list, a spec line or a mixed line must not be rejected — a false
+// positive fails the whole chunk, which is worse than letting a rare English
+// line through.
+func TestEnglishDriftAllowsLatinFragments(t *testing.T) {
+	for _, ok := range []string{
+		// Romanized names: no function words anywhere.
+		"Mihashi Ren, Yua Mikami, Nozomi Ishihara, Saika Kawakita, Arina Hashimoto",
+		// Title line the prompt explicitly keeps verbatim.
+		"<b>[[S5]] Amazing Ishihara Nozomi homemade collection</b>",
+		// Spec / catalogue line.
+		"DASD-693 4K FHD 2160p x265 10bit HEVC AAC",
+		// Chinese translation that carries latin fragments.
+		"石原希望（Nozomi Ishihara）在这部作品里的表现非常自然，DASD-693 的 4K 版本画质很好。",
+		// Short latin fragments on their own lines.
+		"F罩杯<br>4K<br>DASD-693",
+	} {
+		got, err := validateResult(ok, "zh-CN")
+		assert.NoError(t, err, "should not be flagged: %q", ok)
+		assert.NotEmpty(t, got)
+	}
+}
+
+// TestEnglishDriftNeedsFunctionWords documents the exact boundary: long latin
+// lines without function words are names/specs, with them they are prose.
+func TestEnglishDriftNeedsFunctionWords(t *testing.T) {
+	assert.False(t, looksLikeEnglishProse(
+		"Mihashi Ren Yua Mikami Nozomi Ishihara Saika Kawakita Arina Hashimoto"))
+	assert.True(t, looksLikeEnglishProse(
+		"She is really into it and you can tell from the way she moves."))
+	// Too short to judge.
+	assert.False(t, looksLikeEnglishProse("It was good."))
 }
 
 func floatPtr(f float64) *float64 { return &f }

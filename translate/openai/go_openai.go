@@ -187,6 +187,18 @@ var nonTranslationReplies = []string{
 // The result is not empty and not a canned reply, so nothing downstream would
 // notice — the untranslated block simply gets written into the media library.
 // These helpers reject that output so the caller can retry or fall back.
+//
+// Two different smells are checked, because the two languages need different
+// evidence:
+//
+//   - Japanese is easy: kana only ever show up in Japanese text, so a line
+//     that is 30% kana is untranslated with near-certainty.
+//   - English is not: latin letters are perfectly normal inside a Chinese
+//     translation ("DASD-693", "F罩杯", romanized actress names), so a latin
+//     ratio would flag half the library. The check therefore requires the line
+//     to look like an English *sentence* — no Chinese characters at all, plus
+//     several function words (the/is/and/...), which a list of names or a spec
+//     line never contains.
 var (
 	// kanaRe matches hiragana and katakana. They are unique to Japanese:
 	// Chinese output never contains them apart from stray proper nouns.
@@ -197,6 +209,10 @@ var (
 	tagRe    = regexp.MustCompile(`<[^>]*>`)
 	// lineSplitRe splits the completion the way the plugin renders it.
 	lineSplitRe = regexp.MustCompile(`<br\s*/?>|\r?\n`)
+	// hanRe detects CJK ideographs: any of them means the line was translated.
+	hanRe = regexp.MustCompile(`[\x{4E00}-\x{9FFF}]`)
+	// wordRe pulls latin words out of a line.
+	wordRe = regexp.MustCompile(`[A-Za-z]+`)
 )
 
 const (
@@ -205,16 +221,43 @@ const (
 	maxKanaRatio = 0.3
 	// minRunesForDriftCheck skips short fragments: names, tags, dates.
 	minRunesForDriftCheck = 15
+	// minRunesForEnglishDrift is deliberately longer than the Japanese
+	// threshold: a drifted English paragraph is long, while the short latin
+	// fragments that legitimately survive translation are not.
+	minRunesForEnglishDrift = 25
+	// minEnglishWords keeps name lists ("Mihashi Ren, Yua Mikami") out.
+	minEnglishWords = 5
+	// minEnglishStopWords is what separates prose from a list of names.
+	minEnglishStopWords = 2
 )
+
+// englishStopWords are high-frequency function words. They appear in almost
+// any English sentence and essentially never in a list of romanized names,
+// a catalogue number or a resolution tag.
+var englishStopWords = map[string]struct{}{
+	"a": {}, "an": {}, "and": {}, "are": {}, "as": {}, "at": {}, "be": {},
+	"but": {}, "by": {}, "can": {}, "do": {}, "for": {}, "from": {}, "had": {},
+	"has": {}, "have": {}, "he": {}, "her": {}, "his": {}, "how": {}, "i": {},
+	"if": {}, "in": {}, "is": {}, "it": {}, "its": {}, "just": {}, "me": {},
+	"my": {}, "no": {}, "not": {}, "of": {}, "on": {}, "or": {}, "she": {},
+	"so": {}, "that": {}, "the": {}, "their": {}, "them": {}, "then": {},
+	"there": {}, "these": {}, "they": {}, "this": {}, "to": {}, "too": {},
+	"very": {}, "was": {}, "we": {}, "were": {}, "what": {}, "when": {},
+	"which": {}, "who": {}, "will": {}, "with": {}, "would": {}, "you": {},
+	"your": {},
+}
+
+// lineText strips the HTML tags and reports whether the line is exempt from
+// drift checks: reviewer nicknames are kept verbatim by the prompt, kana and
+// all.
+func lineText(line string) (string, bool) {
+	text := strings.TrimSpace(tagRe.ReplaceAllString(line, ""))
+	return text, strings.HasPrefix(text, "👤")
+}
 
 // looksUntranslated reports whether one line of the completion is still
 // written in Japanese.
-func looksUntranslated(line string) bool {
-	text := strings.TrimSpace(tagRe.ReplaceAllString(line, ""))
-	// Author lines keep the reviewer's nickname verbatim, kana included.
-	if strings.HasPrefix(text, "👤") {
-		return false
-	}
+func looksUntranslated(text string) bool {
 	if utf8.RuneCountInString(text) < minRunesForDriftCheck {
 		return false
 	}
@@ -223,6 +266,37 @@ func looksUntranslated(line string) bool {
 		return false
 	}
 	return float64(len(kanaRe.FindAllString(text, -1)))/float64(len(letters)) > maxKanaRatio
+}
+
+// looksLikeEnglishProse reports whether one line is still written in English.
+// It is intentionally conservative: a false positive here fails the whole
+// chunk (the plugin treats a rejected chunk as a failed one), which is worse
+// than letting a rare English line through.
+func looksLikeEnglishProse(text string) bool {
+	if utf8.RuneCountInString(text) < minRunesForEnglishDrift {
+		return false
+	}
+	// A single Chinese character means the line was translated: Chinese output
+	// legitimately carries latin fragments (DASD-693, F罩杯, 4K).
+	if hanRe.MatchString(text) {
+		return false
+	}
+
+	words := wordRe.FindAllString(text, -1)
+	if len(words) < minEnglishWords {
+		return false
+	}
+
+	stop := 0
+	for _, word := range words {
+		if _, ok := englishStopWords[strings.ToLower(word)]; ok {
+			stop++
+			if stop >= minEnglishStopWords {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // isChineseTarget reports whether the target is any Chinese variant.
@@ -237,14 +311,19 @@ func isChineseTarget(target string) bool {
 	return strings.HasPrefix(t, "zh")
 }
 
-// detectLanguageDrift reports whether any line of the completion still looks
-// like Japanese while the caller asked for Chinese.
+// detectLanguageDrift reports whether any line of the completion is still in
+// the source language (or slipped into English) while the caller asked for
+// Chinese.
 func detectLanguageDrift(s, target string) bool {
 	if !isChineseTarget(target) {
 		return false
 	}
 	for _, line := range lineSplitRe.Split(s, -1) {
-		if looksUntranslated(line) {
+		text, exempt := lineText(line)
+		if exempt {
+			continue
+		}
+		if looksUntranslated(text) || looksLikeEnglishProse(text) {
 			return true
 		}
 	}
@@ -266,7 +345,7 @@ func validateResult(s, target string) (string, error) {
 	}
 	if detectLanguageDrift(s, target) {
 		return "", fmt.Errorf(
-			"openai: output is still in the source language despite target %q; refusing to write an untranslated result",
+			"openai: output is still in the source language or in English despite target %q; refusing to write an untranslated result",
 			target)
 	}
 	return s, nil
