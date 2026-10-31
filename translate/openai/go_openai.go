@@ -81,13 +81,13 @@ func (oa *OpenAI) translateWithGoOpenAI(q, source, target, mode string) (string,
 	// Only the refusal path pays for this. Ordinary chunks keep their original
 	// layout, which matters because an English system prompt is exactly the
 	// attractor that made the model drift back into English in the first place.
-	if isRefusalReply(out) {
+	if isRefusalReply(out, q) {
 		retry, retryErr := oa.complete(config, withNeutralSystemPrompt(messages), maxCompletionTokens)
 		if retryErr != nil {
 			return "", fmt.Errorf("openai: model refused to translate (%q) and the retry failed: %w",
 				ellipsis(out, 60), retryErr)
 		}
-		if isRefusalReply(retry) {
+		if isRefusalReply(retry, q) {
 			return "", fmt.Errorf("openai: model refused to translate (%q)", ellipsis(out, 60))
 		}
 		out = retry
@@ -151,49 +151,63 @@ func withNeutralSystemPrompt(messages []openai.ChatCompletionMessage) []openai.C
 	return out
 }
 
-// refusalReplies are the openers a safety-aligned model emits instead of
-// translating. Kept as full phrases rather than bare words such as "无法提供",
-// which appear inside perfectly good translations.
-var refusalReplies = []string{
-	"无法提供包含色情内容的信息",
-	"无法提供涉及色情内容的信息",
-	"无法提供色情内容",
-	"无法提供该内容的翻译",
-	"无法协助翻译",
-	"不能提供包含色情内容",
-	"我无法翻译",
-	"我无法提供",
-	"抱歉，我不能",
-	"抱歉，我无法",
-	"I can't translate this",
-	"I cannot translate this",
-	"I can't help with",
-	"I cannot help with",
-	"I'm unable to translate",
-	"I am unable to translate",
-}
+// refusalRe matches the shape of a refusal rather than one exact sentence.
+// A fixed phrase list does not survive contact with reality: the same model
+// answered the same kind of input with "我无法提供包含色情内容的信息",
+// "无法提供该请求的翻译。作为 AI 助手，我严格遵守内容安全规范" and
+// "无法提供该内容的翻译" within one afternoon. What stays constant is that a
+// refusal talks about the request or about the assistant, not about the source
+// text: a first-person inability, an AI self-reference, or an inability to
+// provide "this/your" content.
+//
+// The subjectless form is deliberately split out and anchored to the start of
+// the reply (refusalHeadRe). "无法提供该商品的库存" is a perfectly ordinary
+// sentence inside a translation; a refusal opens with it.
+var refusalRe = regexp.MustCompile(`(?i)` +
+	`作为\s*(AI|人工智能|语言模型|智能助手)` + `|` +
+	`AI\s*助手|人工智能助手|语言模型` + `|` +
+	`我\s*(无法|不能|不可以|不便|拒绝)(提供|协助|翻译|满足|完成|处理|参与|生成)` + `|` +
+	`抱歉[，,]\s*我(无法|不能)` + `|` +
+	`as an ai|i\s*(am|'m)\s*(sorry|unable|afraid)|i\s*(can't|cannot|can not)\s*(help|assist|translate|provide|comply)`)
 
-// maxRefusalRunes bounds the refusal check. A real translation of a long chunk
-// is far longer than this, so a quoted phrase inside it cannot be mistaken for
-// a refusal.
-const maxRefusalRunes = 120
+var refusalHeadRe = regexp.MustCompile(`^(无法|不能)(提供|协助|翻译)(该|此|您)`)
+
+const (
+	// maxRefusalRunes bounds the pattern check. Refusals are one or two
+	// sentences; a real translation of a long chunk is far longer, so a phrase
+	// quoted inside a long translation cannot be mistaken for a refusal.
+	maxRefusalRunes = 200
+
+	// maxRefusalHeadRunes bounds the subjectless form separately: it is a much
+	// weaker signal, so only a short reply is allowed to use it.
+	maxRefusalHeadRunes = 120
+
+	// minSourceRunesForShrinkCheck and shrinkDivisor catch the refusal that
+	// carries no marker at all: a long chunk that comes back as a handful of
+	// characters. A 999-character review refused with "无法提供。" (5 runes).
+	// No legitimate translation shrinks by an order of magnitude.
+	minSourceRunesForShrinkCheck = 300
+	shrinkDivisor                = 10
+)
 
 // isRefusalReply reports whether the completion is a refusal rather than a
-// translation.
-func isRefusalReply(s string) bool {
-	text := strings.TrimSpace(s)
+// translation of source.
+func isRefusalReply(reply, source string) bool {
+	text := strings.TrimSpace(reply)
 	if text == "" {
 		return false // handled separately as an empty result
 	}
-	if utf8.RuneCountInString(text) > maxRefusalRunes {
-		return false
+	replyRunes := utf8.RuneCountInString(text)
+
+	if replyRunes <= maxRefusalRunes && refusalRe.MatchString(text) {
+		return true
 	}
-	for _, phrase := range refusalReplies {
-		if strings.Contains(text, phrase) {
-			return true
-		}
+	if replyRunes <= maxRefusalHeadRunes && refusalHeadRe.MatchString(text) {
+		return true
 	}
-	return false
+
+	sourceRunes := utf8.RuneCountInString(source)
+	return sourceRunes >= minSourceRunesForShrinkCheck && replyRunes*shrinkDivisor < sourceRunes
 }
 
 // ellipsis shortens s for inclusion in an error message.

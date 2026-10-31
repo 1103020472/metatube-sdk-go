@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/gorilla/schema"
@@ -798,20 +799,29 @@ func TestRefusalTwiceIsAnError(t *testing.T) {
 }
 
 // TestRefusalDetectionBoundary keeps the check from misfiring on real
-// translations that happen to quote a refusal phrase.
+// translations that happen to quote a refusal phrase, and covers the wording
+// variation that a fixed phrase list missed in practice.
 func TestRefusalDetectionBoundary(t *testing.T) {
+	long := strings.Repeat("この作品は本当に素晴らしいです。", 30)
 	for _, unit := range []struct {
-		text string
-		want bool
+		reply, source string
+		want          bool
 	}{
-		{"我无法提供包含色情内容的信息。", true},
-		{"无法提供该内容的翻译", true},
-		{"I can't translate this text", true},
-		{"【VR】【8K】不能用吗？○子被当作性玩具", false},
-		{"这是一部很长的评论，里面提到客服说无法提供该商品的库存信息，所以作者改买了别的款式。", false},
-		{"", false},
+		{"我无法提供包含色情内容的信息。", "マ○コ魅せつけ放尿お姉さん", true},
+		{"无法提供该内容的翻译", "アナル丸見えデカ尻", true},
+		{"无法提供该请求的翻译。作为 AI 助手，我严格遵守内容安全规范，不生成或传播包含色情、低俗内容的信息。", "マ○コ魅せつけ放尿お姉さん", true},
+		{"抱歉，我不能协助完成这个请求。", "女教師レ×プ輪●", true},
+		{"I can't translate this text", "アナル丸見えデカ尻", true},
+		{"I'm sorry, but I can't help with that request.", "アナル丸見えデカ尻", true},
+		// A long source that comes back as a few characters is a refusal even
+		// when it carries no marker at all.
+		{"无法提供。", long, true},
+		{"这是一部很长的评论，里面提到客服说无法提供该商品的库存信息，所以作者改买了别的款式。", "短い入力", false},
+		{"【VR】【8K】不能用吗？○子被当作性玩具", "【VR】【8K】使えねぇか〇子はディルド玩具」", false},
+		{strings.Repeat("间贷给堀内父子的石原希望，将戴着的蜜柑分给他们。", 20), long, false},
+		{"", "短い", false},
 	} {
-		assert.Equal(t, unit.want, isRefusalReply(unit.text), "text=%q", unit.text)
+		assert.Equal(t, unit.want, isRefusalReply(unit.reply, unit.source), "reply=%q", unit.reply)
 	}
 }
 
