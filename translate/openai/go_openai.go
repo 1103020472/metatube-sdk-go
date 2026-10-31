@@ -189,7 +189,12 @@ var refusalRe = regexp.MustCompile(`(?i)` +
 	`AI\s*助手|人工智能助手|语言模型` + `|` +
 	`我\s*(无法|不能|不可以|不便|拒绝)(提供|协助|翻译|满足|完成|处理|参与|生成)` + `|` +
 	`抱歉[，,]\s*我(无法|不能)` + `|` +
-	`as an ai|i\s*(am|'m)\s*(sorry|unable|afraid)|i\s*(can't|cannot|can not)\s*(help|assist|translate|provide|comply)`)
+	// Gateway-side moderation replies (one-api / new-api style) are neither a
+	// model refusal nor a translation; they arrive as ordinary content.
+	`系统检测到.{0,40}敏感` + `|` +
+	`as an ai|i\s*(am|'m)\s*(sorry|unable|afraid)` + `|` +
+	`i\s*(can't|cannot|can not|won't|will not|am unable to)\s*` +
+	`(help|assist|translate|provide|comply|respond|answer|continue|do)`)
 
 var refusalHeadRe = regexp.MustCompile(`^(无法|不能)(提供|协助|翻译)(该|此|您)`)
 
@@ -203,6 +208,17 @@ const (
 	// weaker signal, so only a short reply is allowed to use it.
 	maxRefusalHeadRunes = 120
 
+	// maxRefusalTailRunes bounds the trailing-window check. A model does not
+	// always replace the translation with a refusal: it can translate the text
+	// correctly and then append a refusal sentence of its own
+	// ("…榨不出精子为止。\nSorry, I can't respond to this question."). The reply
+	// is long and mostly a real translation, so the whole-text checks above
+	// cannot see the refusal, and the drift check below reports it as
+	// untranslated output — which the plugin reads as an endpoint problem and
+	// answers by benching the provider instead of routing to the
+	// sensitive-content fallback. Only the tail can tell the two apart.
+	maxRefusalTailRunes = 160
+
 	// minSourceRunesForShrinkCheck and shrinkDivisor catch the refusal that
 	// carries no marker at all: a long chunk that comes back as a handful of
 	// characters. A 999-character review refused with "无法提供。" (5 runes).
@@ -210,6 +226,19 @@ const (
 	minSourceRunesForShrinkCheck = 300
 	shrinkDivisor                = 10
 )
+
+// refusalInTail reports whether a refusal marker sits in the last
+// maxRefusalTailRunes of text. Scanning a window rather than whole lines keeps
+// a phrase quoted in the middle of a long translation from matching, while
+// still catching the appended-refusal case whether the model put it on a new
+// line or glued it to the last sentence.
+func refusalInTail(text string) bool {
+	r := []rune(text)
+	if len(r) > maxRefusalTailRunes {
+		text = string(r[len(r)-maxRefusalTailRunes:])
+	}
+	return refusalRe.MatchString(text)
+}
 
 // isRefusalReply reports whether the completion is a refusal rather than a
 // translation of source.
@@ -224,6 +253,11 @@ func isRefusalReply(reply, source string) bool {
 		return true
 	}
 	if replyRunes <= maxRefusalHeadRunes && refusalHeadRe.MatchString(text) {
+		return true
+	}
+	// Longer replies are checked by their tail: a valid translation with a
+	// refusal appended is still a refusal.
+	if replyRunes > maxRefusalRunes && refusalInTail(text) {
 		return true
 	}
 

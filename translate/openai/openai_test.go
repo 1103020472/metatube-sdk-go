@@ -783,6 +783,26 @@ func TestRefusalRetriesWithNeutralSystemPrompt(t *testing.T) {
 	}
 }
 
+// TestAppendedRefusalRetries covers the partial refusal: the model translates
+// the text and then adds "Sorry, I can't respond to this question." on a new
+// line. Before the tail check this was reported as language drift, which the
+// plugin classifies as an endpoint failure — it benched the provider and never
+// tried the sensitive-content fallback, and the title was lost.
+func TestAppendedRefusalRetries(t *testing.T) {
+	srv, bodies := newScriptedServer(t,
+		"【VR】【8K】没用的〇子被假阳具玩具调教，直到榨不出精子为止。小野坂结衣花\nSorry, I can't respond to this question.",
+		"【VR】【8K】没用的〇子被假阳具玩具调教，直到榨不出精子为止。小野坂结衣花")
+
+	got, err := (&OpenAI{
+		APIKey: "k", APIUrl: srv.URL, Model: "m",
+		PromptMode: PromptModeSingle,
+	}).Translate("【VR】【8K】使えねぇか〇子はディルド玩具」", "ja", "zh-CN")
+
+	assert.NoError(t, err)
+	assert.Equal(t, "【VR】【8K】没用的〇子被假阳具玩具调教，直到榨不出精子为止。小野坂结衣花", got)
+	assert.Len(t, *bodies, 2, "one attempt plus one retry with the neutral system prompt")
+}
+
 // TestRefusalTwiceIsAnError stops a persistent refusal from being written into
 // the library: the caller must see an error so it can fall back.
 func TestRefusalTwiceIsAnError(t *testing.T) {
@@ -817,6 +837,16 @@ func TestRefusalDetectionBoundary(t *testing.T) {
 		// A long source that comes back as a few characters is a refusal even
 		// when it carries no marker at all.
 		{"无法提供。", long, true},
+		// The model translated correctly and then appended a refusal sentence
+		// on its own line (observed on a gateway-hosted GLM model). The reply
+		// is long and mostly a real translation, so only the tail reveals it.
+		{"【VR】【8K】没用的〇子被假阳具玩具调教，直到榨不出精子为止。小野坂结衣花\nSorry, I can't respond to this question.",
+			"【VR】【8K】使えねぇか〇子はディルド玩具」 ト〇リュウ女幹部の薬漬けチ〇コ調教", true},
+		// Same refusal glued to the last sentence instead of on a new line.
+		{"【VR】【8K】没用的〇子被假阳具玩具调教，直到榨不出精子为止。Sorry, I can't respond to this question.",
+			"【VR】【8K】使えねぇか〇子はディルド玩具」 ト〇リュウ女幹部の薬漬けチ〇コ調教", true},
+		// Gateway-side moderation (one-api / new-api) answers as content.
+		{"系统检测到您当前输入的信息存在敏感内容", "マ○コ魅せつけ放尿お姉さん", true},
 		{"这是一部很长的评论，里面提到客服说无法提供该商品的库存信息，所以作者改买了别的款式。", "短い入力", false},
 		{"【VR】【8K】不能用吗？○子被当作性玩具", "【VR】【8K】使えねぇか〇子はディルド玩具」", false},
 		{strings.Repeat("间贷给堀内父子的石原希望，将戴着的蜜柑分给他们。", 20), long, false},
