@@ -783,15 +783,18 @@ func TestRefusalRetriesWithNeutralSystemPrompt(t *testing.T) {
 	}
 }
 
-// TestAppendedRefusalRetries covers the partial refusal: the model translates
-// the text and then adds "Sorry, I can't respond to this question." on a new
-// line. Before the tail check this was reported as language drift, which the
-// plugin classifies as an endpoint failure — it benched the provider and never
-// tried the sensitive-content fallback, and the title was lost.
-func TestAppendedRefusalRetries(t *testing.T) {
+// TestAppendedRefusalIsStripped covers the partial refusal: the model
+// translates the text and then adds "Sorry, I can't respond to this question."
+// on a new line. Before the tail check this was reported as language drift,
+// which the plugin classifies as an endpoint failure — it benched the provider
+// and never tried the sensitive-content fallback, so the title was lost.
+//
+// The translation itself is complete and a retry does not help (measured on the
+// gateway that produced this: the neutral system prompt still appended the
+// sentence in 3 of 10 runs), so the sentence is dropped instead.
+func TestAppendedRefusalIsStripped(t *testing.T) {
 	srv, bodies := newScriptedServer(t,
-		"【VR】【8K】没用的〇子被假阳具玩具调教，直到榨不出精子为止。小野坂结衣花\nSorry, I can't respond to this question.",
-		"【VR】【8K】没用的〇子被假阳具玩具调教，直到榨不出精子为止。小野坂结衣花")
+		"【VR】【8K】没用的〇子被假阳具玩具调教，直到榨不出精子为止。小野坂结衣花\nSorry, I can't respond to this question.")
 
 	got, err := (&OpenAI{
 		APIKey: "k", APIUrl: srv.URL, Model: "m",
@@ -800,7 +803,23 @@ func TestAppendedRefusalRetries(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Equal(t, "【VR】【8K】没用的〇子被假阳具玩具调教，直到榨不出精子为止。小野坂结衣花", got)
-	assert.Len(t, *bodies, 2, "one attempt plus one retry with the neutral system prompt")
+	assert.Len(t, *bodies, 1, "the translation is already there, so no retry is spent")
+}
+
+// TestAppendedRefusalKeepsLineBreaks pins the shape of the kept text: the
+// plugin renders <br> separators, so dropping the refusal line must not
+// rewrite the remaining ones into newlines.
+func TestAppendedRefusalKeepsLineBreaks(t *testing.T) {
+	srv, _ := newScriptedServer(t,
+		"第一行翻译<br>第二行翻译<br>Sorry, I can't respond to this question.")
+
+	got, err := (&OpenAI{
+		APIKey: "k", APIUrl: srv.URL, Model: "m",
+		PromptMode: PromptModeSingle,
+	}).Translate("一行目<br>二行目", "ja", "zh-CN")
+
+	assert.NoError(t, err)
+	assert.Equal(t, "第一行翻译<br>第二行翻译", got)
 }
 
 // TestRefusalTwiceIsAnError stops a persistent refusal from being written into

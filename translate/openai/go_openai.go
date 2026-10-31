@@ -66,6 +66,20 @@ func (oa *OpenAI) translateWithGoOpenAI(q, source, target, mode string) (string,
 		return "", err
 	}
 
+	// A refusal is not always a replacement for the translation: some models
+	// finish the translation and then append a refusal sentence of their own
+	// ("…榨不出精子为止。\nSorry, I can't respond to this question."). That is
+	// not worth a retry — measured on a gateway-hosted GLM model, the neutral
+	// system prompt still appended the sentence in 3 of 10 runs, so retrying
+	// mostly buys a second refusal. The translation is already complete, so
+	// drop the sentence and keep it. Only a reply with nothing usable left
+	// goes on to the retry below.
+	if isRefusalReply(out, q) {
+		if trimmed := stripTrailingRefusal(out); trimmed != "" && !isRefusalReply(trimmed, q) {
+			return validateResult(trimmed, target)
+		}
+	}
+
 	// Safety-aligned models sometimes answer a translation request with a
 	// refusal instead of a translation ("I can't provide content of that
 	// nature"). The refusal is neither empty nor in the wrong language, so
@@ -263,6 +277,54 @@ func isRefusalReply(reply, source string) bool {
 
 	sourceRunes := utf8.RuneCountInString(source)
 	return sourceRunes >= minSourceRunesForShrinkCheck && replyRunes*shrinkDivisor < sourceRunes
+}
+
+// trailingSeparatorRe matches the line separator left behind when the refusal
+// line is cut away.
+var trailingSeparatorRe = regexp.MustCompile(`(?i)(?:<br\s*/?>|[\r\n])+$`)
+
+// stripTrailingRefusal removes a refusal sentence the model appended after an
+// otherwise complete translation and returns what is left. It returns "" when
+// the whole reply was a refusal, which lets the caller fall through to the
+// retry.
+//
+// Only the tail is considered, and only whole trailing lines (or, failing
+// that, the text from the last marker onwards) are dropped: a phrase quoted in
+// the middle of a translation must survive untouched.
+func stripTrailingRefusal(text string) string {
+	if !refusalInTail(text) {
+		return text
+	}
+
+	// Usual shape: the refusal occupies the last non-empty line, so cut at the
+	// start of that line and keep every separator before it (<br> included).
+	type span struct{ start, end int }
+	lines := make([]span, 0, 8)
+	start := 0
+	for _, sep := range lineSplitRe.FindAllStringIndex(text, -1) {
+		lines = append(lines, span{start, sep[0]})
+		start = sep[1]
+	}
+	lines = append(lines, span{start, len(text)})
+	for i := len(lines) - 1; i >= 0; i-- {
+		seg := text[lines[i].start:lines[i].end]
+		if strings.TrimSpace(seg) == "" {
+			continue
+		}
+		if refusalRe.MatchString(seg) {
+			// The separator that preceded the refusal line belongs to the
+			// refusal, not to the translation that is kept.
+			return trailingSeparatorRe.ReplaceAllString(strings.TrimSpace(text[:lines[i].start]), "")
+		}
+		break
+	}
+
+	// Glued to the last sentence: cut at the marker itself.
+	matches := refusalRe.FindAllStringIndex(text, -1)
+	if len(matches) == 0 {
+		return text
+	}
+	return strings.TrimSpace(text[:matches[len(matches)-1][0]])
 }
 
 // ellipsis shortens s for inclusion in an error message.
