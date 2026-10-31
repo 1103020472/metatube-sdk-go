@@ -84,17 +84,38 @@ func (oa *OpenAI) translateWithGoOpenAI(q, source, target, mode string) (string,
 	if isRefusalReply(out, q) {
 		retry, retryErr := oa.complete(config, withNeutralSystemPrompt(messages), maxCompletionTokens)
 		if retryErr != nil {
-			return "", fmt.Errorf("openai: model refused to translate (%q) and the retry failed: %w",
-				ellipsis(out, 60), retryErr)
+			return "", fmt.Errorf("%s (%q) and the retry failed: %w",
+				refusalErrorPrefix, ellipsis(out, 60), retryErr)
 		}
 		if isRefusalReply(retry, q) {
-			return "", fmt.Errorf("openai: model refused to translate (%q)", ellipsis(out, 60))
+			return "", fmt.Errorf("%s (%q)", refusalErrorPrefix, ellipsis(out, 60))
 		}
 		out = retry
 	}
 
 	return validateResult(out, target)
 }
+
+// refusalErrorPrefix opens every error this file returns when the model
+// refuses, and the wording is a contract, not cosmetics.
+//
+// The Emby/Jellyfin plugin classifies translation errors by matching the
+// exception text against
+// "content[\s_-]*(policy|filter)|moderation|sensitive|safety|prohibited|..." to
+// decide whether an error is a content problem or an endpoint problem. That
+// distinction drives two different behaviours:
+//
+//   - content problem -> the local channel is abandoned without starting its
+//     failure cooldown, and the primary channel switches to the
+//     sensitive-content fallback (B) instead of failing the whole title.
+//   - endpoint problem -> the local channel cools down for N minutes and the
+//     error is retried/failed as a transport problem.
+//
+// A refusal is unambiguously a content problem, so the prefix says "content
+// policy". Without it the plugin reads a refusal as an endpoint failure: one
+// refused title benches the local provider for ten minutes, and a refusal from
+// the primary provider kills the translation instead of trying the B channel.
+const refusalErrorPrefix = "openai: content policy refusal: the model refused to translate"
 
 // complete performs one chat completion and returns the cleaned content.
 func (oa *OpenAI) complete(config openai.ClientConfig, messages []openai.ChatCompletionMessage,

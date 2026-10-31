@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -838,4 +839,30 @@ func TestRefusalRetryIsNotUsedForNormalChunks(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Len(t, *bodies, 1)
+}
+
+// TestRefusalErrorIsClassifiedAsContentError pins the contract with the Emby
+// plugin. The plugin decides between "content problem" and "endpoint problem"
+// by matching the exception text against this regex, and the two outcomes are
+// very different: a content problem abandons the local channel without starting
+// its cooldown and routes the primary channel to the sensitive-content
+// fallback, while an endpoint problem benches the local channel for ten minutes
+// and fails the title. Rewording the error must not silently flip that.
+func TestRefusalErrorIsClassifiedAsContentError(t *testing.T) {
+	pluginSensitiveRe := regexp.MustCompile(`(?i)` +
+		`content[\s_-]*(policy|filter)|moderation|sensitive|safety|` +
+		`prohibited|inappropriate|flagged|风控|敏感|违规`)
+
+	refusal := "我无法提供包含色情内容的信息。"
+	srv, _ := newScriptedServer(t, refusal, refusal)
+
+	_, err := (&OpenAI{
+		APIKey: "k", APIUrl: srv.URL, Model: "m",
+		PromptMode: PromptModeSingle,
+	}).Translate("マ○コ魅せつけ放尿お姉さん", "ja", "zh-CN")
+
+	if !assert.Error(t, err) {
+		return
+	}
+	assert.Regexp(t, pluginSensitiveRe, err.Error())
 }
