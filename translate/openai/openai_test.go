@@ -706,3 +706,126 @@ func TestTemperatureBindsFromRouteQuery(t *testing.T) {
 	}
 	assert.Equal(t, float64(0), *target.Temperature)
 }
+
+// newScriptedServer replies with each content in turn and records every
+// request body, so a test can assert on both calls of a retry.
+func newScriptedServer(t *testing.T, contents ...string) (*httptest.Server, *[][]byte) {
+	t.Helper()
+	bodies := new([][]byte)
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		*bodies = append(*bodies, body)
+
+		content := contents[len(contents)-1]
+		if calls < len(contents) {
+			content = contents[calls]
+		}
+		calls++
+
+		payload, _ := json.Marshal(content)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":` +
+			string(payload) + `},"finish_reason":"stop"}]}`))
+	}))
+	t.Cleanup(srv.Close)
+	return srv, bodies
+}
+
+type capturedMessages struct {
+	Messages []struct {
+		Role    string `json:"role"`
+		Content string `json:"content"`
+	} `json:"messages"`
+}
+
+// TestRefusalRetriesWithNeutralSystemPrompt covers the failure this pipeline
+// actually hit: a safety-aligned local model answers a translation request with
+// "我无法提供包含色情内容的信息。" instead of a translation. That text is
+// Chinese, non-empty and not in the wrong script, so every other guard passes
+// it; without a retry it would be stored as the title.
+func TestRefusalRetriesWithNeutralSystemPrompt(t *testing.T) {
+	srv, bodies := newScriptedServer(t,
+		"我无法提供包含色情内容的信息。我的职责是提供安全、有益的帮助。",
+		"【VR】【8K】不能用吗？○子被当作性玩具")
+
+	got, err := (&OpenAI{
+		APIKey: "k", APIUrl: srv.URL, Model: "m",
+		PromptMode: PromptModeSingle,
+	}).Translate("【VR】【8K】使えねぇか〇子はディルド玩具」", "ja", "zh-CN")
+
+	assert.NoError(t, err)
+	assert.Equal(t, "【VR】【8K】不能用吗？○子被当作性玩具", got)
+	if !assert.Len(t, *bodies, 2) {
+		return
+	}
+
+	// The first attempt keeps the single layout: no system message at all.
+	var first capturedMessages
+	if assert.NoError(t, json.Unmarshal((*bodies)[0], &first)) {
+		if assert.Len(t, first.Messages, 1) {
+			assert.Equal(t, "user", first.Messages[0].Role)
+		}
+	}
+
+	// The retry adds exactly one system message, in front, and keeps the user
+	// turn untouched so the model still sees the source text the same way.
+	var second capturedMessages
+	if assert.NoError(t, json.Unmarshal((*bodies)[1], &second)) {
+		if assert.Len(t, second.Messages, 2) {
+			assert.Equal(t, "system", second.Messages[0].Role)
+			assert.Contains(t, second.Messages[0].Content, "machine translation engine")
+			assert.Equal(t, "user", second.Messages[1].Role)
+			assert.Equal(t, first.Messages[0].Content, second.Messages[1].Content)
+		}
+	}
+}
+
+// TestRefusalTwiceIsAnError stops a persistent refusal from being written into
+// the library: the caller must see an error so it can fall back.
+func TestRefusalTwiceIsAnError(t *testing.T) {
+	refusal := "我无法提供包含色情内容的信息。"
+	srv, bodies := newScriptedServer(t, refusal, refusal)
+
+	got, err := (&OpenAI{
+		APIKey: "k", APIUrl: srv.URL, Model: "m",
+		PromptMode: PromptModeSingle,
+	}).Translate("マ○コ魅せつけ放尿お姉さん", "ja", "zh-CN")
+
+	assert.Empty(t, got)
+	assert.ErrorContains(t, err, "refused to translate")
+	assert.Len(t, *bodies, 2, "one attempt plus one retry, no more")
+}
+
+// TestRefusalDetectionBoundary keeps the check from misfiring on real
+// translations that happen to quote a refusal phrase.
+func TestRefusalDetectionBoundary(t *testing.T) {
+	for _, unit := range []struct {
+		text string
+		want bool
+	}{
+		{"我无法提供包含色情内容的信息。", true},
+		{"无法提供该内容的翻译", true},
+		{"I can't translate this text", true},
+		{"【VR】【8K】不能用吗？○子被当作性玩具", false},
+		{"这是一部很长的评论，里面提到客服说无法提供该商品的库存信息，所以作者改买了别的款式。", false},
+		{"", false},
+	} {
+		assert.Equal(t, unit.want, isRefusalReply(unit.text), "text=%q", unit.text)
+	}
+}
+
+// TestRefusalRetryIsNotUsedForNormalChunks pins the cost: the retry must not
+// fire for ordinary content, otherwise every chunk would carry the English
+// system prompt and drift back into English.
+func TestRefusalRetryIsNotUsedForNormalChunks(t *testing.T) {
+	srv, bodies := newScriptedServer(t, "这部作品非常出色，表演自然。")
+
+	_, err := (&OpenAI{
+		APIKey: "k", APIUrl: srv.URL, Model: "m",
+		PromptMode: PromptModeSingle,
+	}).Translate("この作品は素晴らしいです。", "ja", "zh-CN")
+
+	assert.NoError(t, err)
+	assert.Len(t, *bodies, 1)
+}

@@ -59,10 +59,50 @@ func (oa *OpenAI) translateWithGoOpenAI(q, source, target, mode string) (string,
 		maxCompletionTokens = DefaultMaxCompletionTokens
 	}
 
+	messages := oa.buildMessages(q, source, target, mode)
+
+	out, err := oa.complete(config, messages, maxCompletionTokens)
+	if err != nil {
+		return "", err
+	}
+
+	// Safety-aligned models sometimes answer a translation request with a
+	// refusal instead of a translation ("I can't provide content of that
+	// nature"). The refusal is neither empty nor in the wrong language, so
+	// every other check here lets it through and it would be written into the
+	// library as if it were the translation.
+	//
+	// A neutral "machine translation engine" system message reliably stops it:
+	// the same text that gets refused in a plain user turn is translated once
+	// the system role says the job is mechanical. Measured on qwen3.5:9b, 14 of
+	// 14 previously refused titles came back translated, and a 999-character
+	// refused review came back as 780 characters of Chinese.
+	//
+	// Only the refusal path pays for this. Ordinary chunks keep their original
+	// layout, which matters because an English system prompt is exactly the
+	// attractor that made the model drift back into English in the first place.
+	if isRefusalReply(out) {
+		retry, retryErr := oa.complete(config, withNeutralSystemPrompt(messages), maxCompletionTokens)
+		if retryErr != nil {
+			return "", fmt.Errorf("openai: model refused to translate (%q) and the retry failed: %w",
+				ellipsis(out, 60), retryErr)
+		}
+		if isRefusalReply(retry) {
+			return "", fmt.Errorf("openai: model refused to translate (%q)", ellipsis(out, 60))
+		}
+		out = retry
+	}
+
+	return validateResult(out, target)
+}
+
+// complete performs one chat completion and returns the cleaned content.
+func (oa *OpenAI) complete(config openai.ClientConfig, messages []openai.ChatCompletionMessage,
+	maxCompletionTokens int) (string, error) {
 	req := openai.ChatCompletionRequest{
 		Model:               oa.Model,
 		MaxCompletionTokens: maxCompletionTokens,
-		Messages:            oa.buildMessages(q, source, target, mode),
+		Messages:            messages,
 	}
 	if effort := strings.TrimSpace(oa.ReasoningEffort); effort != "" {
 		req.ReasoningEffort = effort
@@ -79,7 +119,91 @@ func (oa *OpenAI) translateWithGoOpenAI(q, source, target, mode string) (string,
 		// Surface truncation instead of silently returning partial text.
 		return "", fmt.Errorf("openai: response truncated by max_completion_tokens (%d)", maxCompletionTokens)
 	}
-	return validateResult(stripControlTokens(resp.Choices[0].Message.Content), target)
+	return stripControlTokens(resp.Choices[0].Message.Content), nil
+}
+
+// refusalRetrySystemPrompt is used only when the model refused a request.
+//
+// Deliberately free of any "you must not refuse" wording: telling a model to
+// ignore its own rules is both unnecessary here and the kind of instruction a
+// future model may treat as an attack. Describing the task as mechanical
+// translation, with the formatting constraints the caller actually needs, is
+// enough to keep it on task.
+const refusalRetrySystemPrompt = `You are a machine translation engine. ` +
+	`Translate the given text verbatim into the requested language and output nothing else. ` +
+	`Preserve HTML tags, the author line and any date or number exactly as written.`
+
+// withNeutralSystemPrompt puts refusalRetrySystemPrompt in the system slot,
+// dropping any system message the original layout had. Everything else keeps
+// its position so the source text still arrives the way the model expects.
+func withNeutralSystemPrompt(messages []openai.ChatCompletionMessage) []openai.ChatCompletionMessage {
+	out := make([]openai.ChatCompletionMessage, 0, len(messages)+1)
+	out = append(out, openai.ChatCompletionMessage{
+		Role:    openai.ChatMessageRoleSystem,
+		Content: refusalRetrySystemPrompt,
+	})
+	for _, m := range messages {
+		if m.Role == openai.ChatMessageRoleSystem {
+			continue
+		}
+		out = append(out, m)
+	}
+	return out
+}
+
+// refusalReplies are the openers a safety-aligned model emits instead of
+// translating. Kept as full phrases rather than bare words such as "无法提供",
+// which appear inside perfectly good translations.
+var refusalReplies = []string{
+	"无法提供包含色情内容的信息",
+	"无法提供涉及色情内容的信息",
+	"无法提供色情内容",
+	"无法提供该内容的翻译",
+	"无法协助翻译",
+	"不能提供包含色情内容",
+	"我无法翻译",
+	"我无法提供",
+	"抱歉，我不能",
+	"抱歉，我无法",
+	"I can't translate this",
+	"I cannot translate this",
+	"I can't help with",
+	"I cannot help with",
+	"I'm unable to translate",
+	"I am unable to translate",
+}
+
+// maxRefusalRunes bounds the refusal check. A real translation of a long chunk
+// is far longer than this, so a quoted phrase inside it cannot be mistaken for
+// a refusal.
+const maxRefusalRunes = 120
+
+// isRefusalReply reports whether the completion is a refusal rather than a
+// translation.
+func isRefusalReply(s string) bool {
+	text := strings.TrimSpace(s)
+	if text == "" {
+		return false // handled separately as an empty result
+	}
+	if utf8.RuneCountInString(text) > maxRefusalRunes {
+		return false
+	}
+	for _, phrase := range refusalReplies {
+		if strings.Contains(text, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
+// ellipsis shortens s for inclusion in an error message.
+func ellipsis(s string, limit int) string {
+	s = strings.TrimSpace(s)
+	r := []rune(s)
+	if len(r) <= limit {
+		return s
+	}
+	return string(r[:limit]) + "…"
 }
 
 // buildMessages renders the request messages for the configured layout.
