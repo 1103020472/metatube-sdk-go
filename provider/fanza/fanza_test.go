@@ -154,6 +154,7 @@ func TestParseNumber(t *testing.T) {
 		{"h_068mxgs1184bod", "MXGS-1184"},
 		{"h_093r1800258", "R-1800258"},
 		{"55t28621tk", "T-28621"},
+		{"mbr-ab041", "MBR-AB041"},
 	} {
 		assert.Equal(t, unit.want, ParseNumber(unit.id))
 	}

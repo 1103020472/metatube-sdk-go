@@ -518,8 +518,14 @@ func sameNumber(a, b string) bool {
 		return false
 	}
 	aLetters, bLetters := lettersOnly(a), lettersOnly(b)
-	return strings.HasPrefix(aLetters, bLetters) || strings.HasSuffix(aLetters, bLetters) ||
-		strings.HasPrefix(bLetters, aLetters) || strings.HasSuffix(bLetters, aLetters)
+	if aLetters == bLetters {
+		return true
+	}
+	// JavDB also rewrites FC2-PPV-1234567 as FC2-1234567.
+	isFC2 := func(letters string) bool {
+		return letters == "FC" || letters == "FCPPV"
+	}
+	return isFC2(aLetters) && isFC2(bLetters)
 }
 
 // matchesNumber reports whether a number refers to the wanted one. When exact

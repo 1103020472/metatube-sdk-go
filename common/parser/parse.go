@@ -120,8 +120,15 @@ func ParseActorNames(s string) (names []string) {
 
 func ParseIDToNumber(s string) string {
 	s = strings.ToUpper(s)
-	if ss := regexp.MustCompile(`(\d*[A-Z]+)(\d+)`).FindStringSubmatch(s); len(ss) >= 3 {
-		return fmt.Sprintf("%s-%s", ss[1], ss[2])
+	// The prefix may contain an extra letter run after a separator, e.g.
+	// MBR-AB041. Keep that separator instead of rebuilding MBRAB-041.
+	if ss := regexp.MustCompile(`^(\d*[A-Z]+(?:[-_][A-Z]{1,3})?)[-_]?(\d+)$`).
+		FindStringSubmatch(s); len(ss) >= 3 {
+		sep := "-"
+		if strings.ContainsAny(ss[1], "-_") {
+			sep = ""
+		}
+		return fmt.Sprintf("%s%s%s", ss[1], sep, ss[2])
 	}
 	return s
 }

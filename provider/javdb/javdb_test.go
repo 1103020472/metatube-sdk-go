@@ -11,9 +11,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	sdkerrors "github.com/1103020472/metatube-sdk-go/errors"
 	"github.com/1103020472/metatube-sdk-go/internal/envconfig"
 	"github.com/1103020472/metatube-sdk-go/model"
-	sdkerrors "github.com/1103020472/metatube-sdk-go/errors"
 	"github.com/1103020472/metatube-sdk-go/provider/internal/testkit"
 )
 
@@ -79,6 +79,7 @@ func TestJavDBNormalizeMovieKeyword(t *testing.T) {
 		"dsvr00123":       "DSVR-123",
 		"VRKM00123":       "VRKM-123",
 		"FC2-PPV-1234567": "FC2-PPV-1234567",
+		"MBR-AB041":       "MBR-AB041",
 	} {
 		assert.Equal(t, expected, javdb.NormalizeMovieKeyword(keyword), keyword)
 	}
@@ -124,6 +125,7 @@ func TestJavDBSameNumber(t *testing.T) {
 		// JavDB drops some label prefixes.
 		{`259LUXU-1234`, `LUXU-1234`, true},
 		{`FC2-PPV-1234567`, `FC2-1234567`, true},
+		{`MBR-AB041`, `MBRAB-041`, true},
 		// JavDB's fuzzy neighbours must not match.
 		{`MDVR-411`, `MDVR-441`, false},
 		{`MDVR-411`, `MDVR-419`, false},
@@ -131,6 +133,7 @@ func TestJavDBSameNumber(t *testing.T) {
 		{`259LUXU-1234`, `LUXU-1230`, false},
 		{`FC2-PPV-1234567`, `FC2-1234560`, false},
 		{`MDVR-411`, `MIDA-411`, false},
+		{`MBR-AB041`, `MBR-041`, false},
 	} {
 		assert.Equal(t, tt.match, sameNumber(tt.a, tt.b), "%s vs %s", tt.a, tt.b)
 		assert.Equal(t, tt.match, sameNumber(tt.b, tt.a), "%s vs %s", tt.b, tt.a)
@@ -140,7 +143,7 @@ func TestJavDBSameNumber(t *testing.T) {
 func TestJavDBFullNumberRegexp(t *testing.T) {
 	for _, s := range []string{
 		"MDVR-411", "MDVR411", "SSIS-001", "IPVR328",
-		"259LUXU-1234", "FC2-PPV-1234567", "DSVR-123", "TOKYO-HOT-1234",
+		"259LUXU-1234", "FC2-PPV-1234567", "DSVR-123", "TOKYO-HOT-1234", "MBR-AB041",
 	} {
 		assert.True(t, fullNumberRegexp.MatchString(s), s)
 	}
@@ -218,7 +221,8 @@ func TestJavDBFindResultByNumber(t *testing.T) {
 	assert.Nil(t, findResultByNumber(results, "LUXU-1230", false))
 }
 
-func TestJavDBIsLoginRedirect(t *testing.T) {	response := func(rawURL string) *colly.Response {
+func TestJavDBIsLoginRedirect(t *testing.T) {
+	response := func(rawURL string) *colly.Response {
 		u, err := url.Parse(rawURL)
 		assert.NoError(t, err)
 		return &colly.Response{Request: &colly.Request{URL: u}}

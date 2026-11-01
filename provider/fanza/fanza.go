@@ -1125,7 +1125,15 @@ func IsDigitalVideoURL(url string) bool {
 
 // ParseNumber parses FANZA-formatted id to general ID.
 func ParseNumber(s string) string {
-	if ss := regexp.MustCompile(`([A-Z]+)(\d+)`).FindStringSubmatch(strings.ToUpper(s)); len(ss) >= 3 {
+	upper := strings.ToUpper(s)
+	// Keep a post-separator letter run, e.g. MBR-AB041. Without this branch
+	// the generic matcher starts at "AB041" and drops the MBR prefix.
+	if ss := regexp.MustCompile(`^([A-Z0-9]+)[-_]([A-Z]{1,3})(\d+)$`).
+		FindStringSubmatch(upper); len(ss) >= 4 {
+		n, _ := strconv.Atoi(ss[3])
+		return fmt.Sprintf("%s-%s%03d", ss[1], ss[2], n)
+	}
+	if ss := regexp.MustCompile(`([A-Z]+)(\d+)`).FindStringSubmatch(upper); len(ss) >= 3 {
 		n, _ := strconv.Atoi(ss[2])
 		return fmt.Sprintf("%s-%03d", ss[1], n)
 	}

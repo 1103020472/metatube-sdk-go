@@ -65,6 +65,7 @@ func TestParseIDToNumber(t *testing.T) {
 		{"91cm109", "91CM-109"},
 		{"91CM-109", "91CM-109"},
 		{"dldss287", "DLDSS-287"},
+		{"mbr-ab041", "MBR-AB041"},
 	} {
 		assert.Equal(t, unit.want, ParseIDToNumber(unit.id))
 	}
