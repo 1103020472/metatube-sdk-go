@@ -8,7 +8,9 @@ import (
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/antchfx/htmlquery"
 	"github.com/gocolly/colly/v2"
+	"golang.org/x/net/html"
 	"golang.org/x/text/language"
 
 	"github.com/1103020472/metatube-sdk-go/common/parser"
@@ -135,7 +137,7 @@ func (fc2 *FC2) GetMovieInfoByURL(rawURL string) (info *model.MovieInfo, err err
 	c.OnXML(`//section[@class="items_article_Contents"]/iframe`, func(e *colly.XMLElement) {
 		d := c.Clone()
 		d.OnXML(`//html/body/div`, func(e *colly.XMLElement) {
-			info.Summary = strings.TrimSpace(e.Text)
+			info.Summary = extractSummary(e.DOM.(*html.Node))
 		})
 		d.Visit(e.Request.AbsoluteURL(e.Attr("src")))
 	})
@@ -185,6 +187,51 @@ func (fc2 *FC2) GetMovieInfoByURL(rawURL string) (info *model.MovieInfo, err err
 		err = vErr
 	}
 	return
+}
+
+// FC2 puts related works and tags in the same wrapper as the description.
+// Keep the description nodes and drop everything from the recommendation block
+// onwards, otherwise unrelated movie titles end up in the summary.
+func extractSummary(root *html.Node) string {
+	for n := root.FirstChild; n != nil; n = n.NextSibling {
+		if isRecommendationBlock(n) {
+			for n != nil {
+				next := n.NextSibling
+				root.RemoveChild(n)
+				n = next
+			}
+			break
+		}
+	}
+
+	for _, n := range htmlquery.Find(root, `.//script|.//style|.//noscript`) {
+		if n.Parent != nil {
+			n.Parent.RemoveChild(n)
+		}
+	}
+
+	return strings.TrimSpace(htmlquery.InnerText(root))
+}
+
+func isRecommendationBlock(n *html.Node) bool {
+	if n.Type != html.ElementNode {
+		return false
+	}
+
+	const recommendClass = `contains(concat(" ", normalize-space(@class), " "), " recommend_list-100 ")`
+	if n.Data == "section" && htmlquery.FindOne(n, `self::section[`+recommendClass+`]`) != nil {
+		return true
+	}
+	if htmlquery.FindOne(n, `.//section[`+recommendClass+`]`) != nil {
+		return true
+	}
+
+	switch n.Data {
+	case "b", "h1", "h2", "h3", "h4", "h5", "h6":
+		return strings.TrimSpace(htmlquery.InnerText(n)) == "【関連作品】"
+	default:
+		return false
+	}
 }
 
 func init() {
