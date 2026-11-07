@@ -10,6 +10,13 @@ import (
 	"github.com/1103020472/metatube-sdk-go/provider/internal/testkit"
 )
 
+func TestFANZA_CandidateIDs(t *testing.T) {
+	fz := New()
+	assert.Equal(t, []string{"ap282so", "ap282"}, fz.candidateIDs("ap282so"))
+	assert.Equal(t, []string{"1ap00282"}, fz.candidateIDs("1ap00282"))
+	assert.Equal(t, []string{"so"}, fz.candidateIDs("so"))
+}
+
 func TestFANZA_GetMovieInfoByID(t *testing.T) {
 	testkit.Test(t, New, []string{
 		"prst00022",

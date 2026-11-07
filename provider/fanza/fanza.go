@@ -140,15 +140,36 @@ func (fz *FANZA) getHomepagesByID(id string) []string {
 }
 
 func (fz *FANZA) GetMovieInfoByID(id string) (info *model.MovieInfo, err error) {
-	for _, homepage := range fz.getHomepagesByID(id) {
-		if info, err = fz.GetMovieInfoByURL(homepage); errors.Is(err, ErrRegionNotAvailable) || err == nil && info.IsValid() {
-			return
+	for _, candidate := range fz.candidateIDs(id) {
+		for _, homepage := range fz.getHomepagesByID(candidate) {
+			if info, err = fz.GetMovieInfoByURL(homepage); errors.Is(err, ErrRegionNotAvailable) || err == nil && info.IsValid() {
+				return
+			}
 		}
 	}
-	if err != nil && err.Error() == http.StatusText(http.StatusNotFound) {
+	switch {
+	case err == nil:
+		// The last attempt returned a response, but the metadata was
+		// incomplete; leave it to the caller to decide.
+	case errors.Is(err, graphql.ErrNullResponse),
+		err.Error() == http.StatusText(http.StatusNotFound):
 		err = provider.ErrInfoNotFound
 	}
 	return
+}
+
+// candidateIDs returns the content IDs to try for a lookup.
+//
+// Some mono works expose the package/item variant id as their 品番, e.g.
+// "ap282so" on https://www.dmm.co.jp/mono/dvd/-/detail/=/cid=ap282/, while
+// the detail page cid (and the only id DMM can resolve) is "ap282". Such ids
+// are stored as-is after scraping, so retry without the legacy "so" suffix.
+func (fz *FANZA) candidateIDs(id string) []string {
+	ids := []string{id}
+	if legacy := strings.TrimSuffix(id, "so"); legacy != id && legacy != "" {
+		ids = append(ids, legacy)
+	}
+	return ids
 }
 
 func (fz *FANZA) ParseMovieIDFromURL(rawURL string) (id string, err error) {
