@@ -242,9 +242,13 @@ func (fz *FANZA) getDigitalMovieInfoByURL(rawURL string) (*model.MovieInfo, erro
 		info.Actors = append(info.Actors, actor.Name)
 	}
 
+	// FANZA 在「没有演员」时不一定留空，会塞占位值（＊＊＊ / (≥o≤) / ??? 等）。
+	// 先清掉，否则占位值会让下面的 amateur 兜底和 av-wiki / JavDB 兜底都不触发。
+	info.Actors = actorname.Clean(info.Actors)
+
 	// Actors (amateur fallback)
 	if len(info.Actors) == 0 && data.PPVContent.AmateurActress.Name != "" {
-		info.Actors = append(info.Actors, data.PPVContent.AmateurActress.Name)
+		info.Actors = actorname.Clean([]string{data.PPVContent.AmateurActress.Name})
 	}
 
 	// Number (fallback)
@@ -722,7 +726,7 @@ func (fz *FANZA) searchMovieNext(keyword string) (results []*model.MovieSearchRe
 			Title:       product.Title,
 			Provider:    fz.Name(),
 			Homepage:    product.DetailURL,
-			Actors:      product.Casts,
+			Actors:      actorname.Clean(product.Casts),
 			ThumbURL:    product.ThumbnailImageURL,
 			CoverURL:    PreviewSrc(product.ThumbnailImageURL),
 			Score:       product.Rate,
@@ -758,6 +762,7 @@ func (fz *FANZA) searchMovieVideo(keyword string) ([]*model.MovieSearchResult, e
 		for _, act := range c.Actresses {
 			actors = append(actors, act.Name)
 		}
+		actors = actorname.Clean(actors)
 
 		floor := strings.ToLower(c.Floor)
 		if floor == "" {
@@ -1202,12 +1207,19 @@ func PreviewSrc(s string) string {
 // fillActorsFromFallback 在 FANZA 自身拿不到演员时逐层兜底：
 // 先查 av-wiki，av-wiki 也没有再用 JavDB 的数据。
 func (fz *FANZA) fillActorsFromFallback(info *model.MovieInfo) {
-	if info == nil || len(info.Actors) > 0 || info.Number == "" {
+	if info == nil {
+		return
+	}
+
+	// FANZA 自己给的演员里可能混着占位值（＊＊＊ / (≥o≤) / ??? 等），
+	// 它们等于「没有演员」。先清洗：清完还有真实演员才不用兜底。
+	info.Actors = actorname.Clean(info.Actors)
+	if len(info.Actors) > 0 || info.Number == "" {
 		return
 	}
 
 	// 第一层兜底：av-wiki
-	if wikiActors, err := getActorsFromWiki(info.Number); err == nil {
+	if wikiActors, err := getActorsFromWikiFn(info.Number); err == nil {
 		if wikiActors = actorname.Clean(wikiActors); len(wikiActors) > 0 {
 			log.Printf("[%s] 通过av-wiki获取演员：%s", fz.Name(), info.Number)
 			info.Actors = wikiActors
@@ -1245,6 +1257,10 @@ func (fz *FANZA) getActorsFromJavDB(number string) ([]string, error) {
 	// JavDB 没有演员时会给 "N/A" 之类的占位值，这里一并清掉。
 	return actorname.Clean(info.Actors), nil
 }
+
+// getActorsFromWikiFn 是 av-wiki 兜底查询的入口，抽成变量便于单测替换，
+// 避免单元测试真的去请求 av-wiki。
+var getActorsFromWikiFn = getActorsFromWiki
 
 // 补充：从 av-wiki.net 兜底获取演员
 func getActorsFromWiki(code string) ([]string, error) {
