@@ -566,6 +566,36 @@ func TestLanguageDriftAllowsKeptNames(t *testing.T) {
 	assert.NotEmpty(t, got)
 }
 
+// TestLanguageDriftAllowsFuriganaParenthetical covers the false positive seen
+// on PRWF-010: the model translated the summary correctly but kept the
+// actress reading as 小松空（こまつそら），24岁。 Those five kana were enough to
+// push the short line over maxKanaRatio and the whole chunk was thrown away.
+func TestLanguageDriftAllowsFuriganaParenthetical(t *testing.T) {
+	ok := "小松空（こまつそら），24岁。<br>" +
+		"住在北方，工作是美容室的帮手，丈夫是同学但单身赴任不在家。" +
+		"<br>她第一次把自己的欲望说出口，就这样AV出道了。"
+	got, err := validateResult(ok, "zh-CN")
+	assert.NoError(t, err)
+	assert.NotEmpty(t, got)
+}
+
+// TestLanguageDriftStillRejectsKanaOutsideParentheses keeps the check honest:
+// stripping the reading must not let a Japanese line through when the kana
+// sits outside the parentheses.
+func TestLanguageDriftStillRejectsKanaOutsideParentheses(t *testing.T) {
+	drifted := "小松空（こまつそら）、24歳。奥さんと呼ぶには若い。だけど本物の人妻。"
+	_, err := validateResult(drifted, "zh-CN")
+	assert.ErrorContains(t, err, "still in the source language")
+}
+
+// TestLanguageDriftDoesNotStripLongParentheses makes sure a whole Japanese
+// sentence cannot hide inside parentheses: only short readings are dropped.
+func TestLanguageDriftDoesNotStripLongParentheses(t *testing.T) {
+	drifted := "（これはとても長い日本語の説明文がここに入っていますので除外されません）"
+	_, err := validateResult(drifted, "zh-CN")
+	assert.ErrorContains(t, err, "still in the source language")
+}
+
 // TestEnglishDriftRejected covers the other way a local model loses the
 // target: asked for Chinese it answers in English. That is what the old
 // `default` layout did, because its system prompt is written in English and

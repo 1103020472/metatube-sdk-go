@@ -468,6 +468,11 @@ var (
 	hanRe = regexp.MustCompile(`[\x{4E00}-\x{9FFF}]`)
 	// wordRe pulls latin words out of a line.
 	wordRe = regexp.MustCompile(`[A-Za-z]+`)
+	// parenReadingRe matches a short parenthesized segment. Chinese
+	// translations routinely keep the Japanese reading of a name in
+	// parentheses (小松空（こまつそら），24岁。); those few kana can push a
+	// short otherwise-Chinese line over maxKanaRatio.
+	parenReadingRe = regexp.MustCompile(`[（(][^）)]{1,12}[）)]`)
 )
 
 const (
@@ -516,11 +521,27 @@ func looksUntranslated(text string) bool {
 	if utf8.RuneCountInString(text) < minRunesForDriftCheck {
 		return false
 	}
+	// Drop furigana-style readings before measuring: they are the one place
+	// where a Chinese line legitimately carries several kana.
+	text = stripParenthesizedReadings(text)
 	letters := letterRe.FindAllString(text, -1)
 	if len(letters) == 0 {
 		return false
 	}
 	return float64(len(kanaRe.FindAllString(text, -1)))/float64(len(letters)) > maxKanaRatio
+}
+
+// stripParenthesizedReadings removes short parenthesized segments that contain
+// kana, i.e. the 小松空（こまつそら） convention. Segments without kana (dates,
+// Latin notes) are kept as-is, and long parentheses are left alone so a whole
+// Japanese sentence cannot hide inside them.
+func stripParenthesizedReadings(text string) string {
+	return parenReadingRe.ReplaceAllStringFunc(text, func(s string) string {
+		if kanaRe.MatchString(s) {
+			return ""
+		}
+		return s
+	})
 }
 
 // looksLikeEnglishProse reports whether one line is still written in English.
