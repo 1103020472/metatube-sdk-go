@@ -317,4 +317,38 @@ func TestFANZA_fillActorsFromFallback(t *testing.T) {
 		assert.Empty(t, info.Actors)
 		assert.Empty(t, fallback.got, "没有番号时不应触发兜底")
 	})
+
+	t.Run("FallbackWhenOnlyPlaceholderActors", func(t *testing.T) {
+		// FANZA 在「这部片没有演员」时会给 ＊＊＊ / (≥o≤) / ??? 这类占位值，
+		// 它们等同为空，必须继续走 av-wiki / JavDB 兜底。
+		old := getActorsFromWikiFn
+		getActorsFromWikiFn = func(string) ([]string, error) { return nil, provider.ErrInfoNotFound }
+		defer func() { getActorsFromWikiFn = old }()
+
+		for _, placeholder := range []string{"＊＊＊", "(≥o≤)", "???", "？？？", "***"} {
+			fallback := &fakeNumberProvider{info: &model.MovieInfo{Actors: []string{"JavDB演员"}}}
+			fz := New()
+			fz.SetActorFallbackProvider(fallback)
+
+			info := &model.MovieInfo{Number: "SSIS-001", Actors: []string{placeholder}}
+			fz.fillActorsFromFallback(info)
+			assert.Equal(t, []string{"JavDB演员"}, []string(info.Actors), placeholder)
+			assert.Equal(t, "SSIS-001", fallback.got, placeholder)
+		}
+	})
+
+	t.Run("KeepRealActorsMixedWithPlaceholder", func(t *testing.T) {
+		old := getActorsFromWikiFn
+		getActorsFromWikiFn = func(string) ([]string, error) { return nil, provider.ErrInfoNotFound }
+		defer func() { getActorsFromWikiFn = old }()
+
+		fallback := &fakeNumberProvider{info: &model.MovieInfo{Actors: []string{"JavDB演员"}}}
+		fz := New()
+		fz.SetActorFallbackProvider(fallback)
+
+		info := &model.MovieInfo{Number: "SSIS-001", Actors: []string{"FANZA演员", "＊＊＊"}}
+		fz.fillActorsFromFallback(info)
+		assert.Equal(t, []string{"FANZA演员"}, []string(info.Actors))
+		assert.Empty(t, fallback.got, "有真实演员时不应触发兜底")
+	})
 }
