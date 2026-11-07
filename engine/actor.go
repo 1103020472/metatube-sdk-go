@@ -38,6 +38,17 @@ func (e *Engine) searchActorFromDB(keyword string, provider mt.Provider) (result
 }
 
 func (e *Engine) searchActor(keyword string, provider mt.Provider, fallback bool) ([]*model.ActorSearchResult, error) {
+	if results, ok := e.actorSearchCache.Get(keyword, provider.Name(), fallback); ok {
+		return results, nil
+	}
+	results, err := e.searchActorUncached(keyword, provider, fallback)
+	if err == nil && len(results) > 0 {
+		e.actorSearchCache.Put(keyword, provider.Name(), fallback, results)
+	}
+	return results, err
+}
+
+func (e *Engine) searchActorUncached(keyword string, provider mt.Provider, fallback bool) ([]*model.ActorSearchResult, error) {
 	innerSearch := func(keyword string) (results []*model.ActorSearchResult, err error) {
 		if provider.Name() == gfriends.Name {
 			return provider.(mt.ActorSearcher).SearchActor(keyword)

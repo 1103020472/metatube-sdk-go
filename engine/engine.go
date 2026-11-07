@@ -38,6 +38,8 @@ type Engine struct {
 	// Name:Provider Case-Insensitive Map
 	actorProviders *maps.CaseInsensitiveMap[mt.ActorProvider]
 	movieProviders *maps.CaseInsensitiveMap[mt.MovieProvider]
+	// Actor search result cache (keyword + provider + fallback, fixed TTL).
+	actorSearchCache *actorSearchCache
 	// Host:[]Provider Case-Insensitive Map
 	// We need a []mt.ActorProvider here because sometimes providers
 	// can share the same host, but they're two different providers.
@@ -58,6 +60,7 @@ func New(db *gorm.DB, opts ...Option) *Engine {
 		initMovieProviderConfigs: maps.NewCaseInsensitiveMap[mt.Config](),
 		actorProviders:       maps.NewCaseInsensitiveMap[mt.ActorProvider](),
 		movieProviders:       maps.NewCaseInsensitiveMap[mt.MovieProvider](),
+		actorSearchCache:     newActorSearchCache(),
 		actorHostProviders:   maps.NewCaseInsensitiveMap[[]mt.ActorProvider](),
 		movieHostProviders:   maps.NewCaseInsensitiveMap[[]mt.MovieProvider](),
 	}
