@@ -181,6 +181,14 @@ func (avl *AVLeague) parseAvLeagueActorDetail(rawURL, id string) (info *model.Ac
 		}
 	})
 
+	// 页面标题：用于识别 Cloudflare 挑战页。
+	var pageTitle string
+	c.OnXML(`//title`, func(e *colly.XMLElement) {
+		if pageTitle == "" {
+			pageTitle = strings.TrimSpace(e.Text)
+		}
+	})
+
 	// Fields
 	c.OnXML(`//*[@id="contents"]//table/tbody/tr`, func(e *colly.XMLElement) {
 		row := strings.TrimSpace(e.ChildText(`.//th`))
@@ -222,8 +230,32 @@ func (avl *AVLeague) parseAvLeagueActorDetail(rawURL, id string) (info *model.Ac
 		}
 	})
 
-	err = c.Visit(info.Homepage)
-	return
+	if err = c.Visit(info.Homepage); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(info.Name) == "" {
+		// 页面能打开但解析不到演员名。最常见的原因是 Cloudflare 挑战页：
+		// 站点被限流/风控时会返回 200 + JS 跳转页（<title>One moment, please...</title>），
+		// 里面完全没有演员信息。
+		// 这里必须返回 ErrInfoNotFound（404）而不是带空 Name 的 info：
+		// 后者会被 engine 转成 500 incomplete metadata，客户端把它当成可重试错误，
+		// 于是每次刷新都立刻重试，形成死循环，还会持续触发风控。
+		if isCloudflareChallengeTitle(pageTitle) {
+			log.Printf("av-league 被 Cloudflare 挑战页拦截（%s），演员 %s 暂时取不到资料", pageTitle, id)
+		}
+		return nil, provider.ErrInfoNotFound
+	}
+	return info, nil
+}
+
+// isCloudflareChallengeTitle 判断页面标题是否是 Cloudflare 的 JS 挑战页。
+// 站点会根据语言返回不同文案，内容固定且不含任何演员数据。
+func isCloudflareChallengeTitle(title string) bool {
+	switch strings.ToLower(strings.TrimSpace(title)) {
+	case "one moment, please...", "少々お待ちください…", "少々お待ちください...", "loader":
+		return true
+	}
+	return false
 }
 
 func (avl *AVLeague) SearchActor(keyword string) (results []*model.ActorSearchResult, err error) {
@@ -518,10 +550,21 @@ func (avl *AVLeague) parseWikiActorDetail(detailURL string) (info *model.ActorIn
 		}
 	})
 
+	// 页面标题：用于识别 Cloudflare 挑战页。
+	var pageTitle string
+	c.OnXML(`//title`, func(e *colly.XMLElement) {
+		if pageTitle == "" {
+			pageTitle = strings.TrimSpace(e.Text)
+		}
+	})
+
 	if err = c.Visit(detailURL); err != nil {
 		return nil, err
 	}
 	if info.Name == "" {
+		if isCloudflareChallengeTitle(pageTitle) {
+			log.Printf("av-wiki 被 Cloudflare 挑战页拦截（%s），演员 %s 暂时取不到资料", pageTitle, id)
+		}
 		return nil, provider.ErrInfoNotFound
 	}
 	return info, nil
