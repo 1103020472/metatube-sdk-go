@@ -64,3 +64,21 @@ func TestAVLeague_SearchActor(t *testing.T) {
 		"宇流木さら",
 	})
 }
+
+// TestIsCloudflareChallengeTitle Cloudflare 挑战页标题识别。
+// 这类页面返回 200 但没有演员数据，必须当成「取不到资料」（404），
+// 不能返回空资料 —— 否则 engine 会转成 500，客户端会无限重试。
+func TestIsCloudflareChallengeTitle(t *testing.T) {
+	cases := map[string]bool{
+		"One moment, please...": true,
+		"  one moment, please...  ": true,
+		"少々お待ちください…":            true,
+		"Loader":                true,
+		"三上悠亜 | AV女優名鑑":         false,
+		"":                      false,
+	}
+
+	for title, want := range cases {
+		assert.Equalf(t, want, isCloudflareChallengeTitle(title), "title %q", title)
+	}
+}
