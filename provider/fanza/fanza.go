@@ -72,8 +72,9 @@ const (
 const regionNotAvailable = "not-available-in-your-region"
 
 var (
-	errContentIDNotFound = errors.New("content-id-not-found")
-	errRequireNewHandler = errors.New("require-new-handler")
+	errContentIDNotFound  = errors.New("content-id-not-found")
+	errRequireNewHandler  = errors.New("require-new-handler")
+	errWikiNumberMismatch = errors.New("av-wiki: result number mismatch")
 
 	ErrRegionNotAvailable = errors.New(regionNotAvailable)
 )
@@ -1273,49 +1274,56 @@ func getActorsFromWiki(code string) ([]string, error) {
 		return nil, fmt.Errorf("请求失败，状态码：%d", resp.StatusCode)
 	}
 
-	// 3. 解析HTML，提取 actress-name 下的所有演员
+	// 3. 解析HTML，只接受番号精确匹配的结果
 	doc, err := html.Parse(resp.Body)
 	if err != nil {
 		return nil, err
 	}
 
-	var actors []string
-	// 递归遍历HTML节点
-	var traverse func(*html.Node)
-	traverse = func(n *html.Node) {
-		// 找到 class=actress-name 的 li 节点
-		if n.Type == html.ElementNode && n.Data == "li" {
-			var isActressNode bool
-			for _, attr := range n.Attr {
-				if attr.Key == "class" && attr.Val == "actress-name" {
-					isActressNode = true
-					break
-				}
-			}
-
-			// 提取该节点下所有 a 标签的文本（演员名）
-			if isActressNode {
-				for child := n.FirstChild; child != nil; child = child.NextSibling {
-					if child.Type == html.ElementNode && child.Data == "a" {
-						// 提取a标签内的文本
-						actorName := strings.TrimSpace(getNodeText(child))
-						if actorName != "" {
-							actors = append(actors, actorName)
-						}
-					}
-				}
-			}
-		}
-
-		// 递归子节点
-		for child := n.FirstChild; child != nil; child = child.NextSibling {
-			traverse(child)
-		}
+	articles := htmlquery.Find(doc, `//article[contains(@class,'archive-list')]`)
+	actors := parseActorsFromWikiArticles(articles, code)
+	if actors == nil && len(articles) > 0 {
+		// 有搜索结果，但番号都不一致（例如搜 DSS-172 只返回 FSDSS-172），
+		// 不能把别的作品的演员套过来。
+		return nil, errWikiNumberMismatch
 	}
-
-	traverse(doc)
-
 	return actorname.Clean(actors), nil
+}
+
+// parseActorsFromWikiArticles 从 av-wiki 搜索结果中提取与 code 精确匹配的
+// 那一条作品的演员。搜索结果里的作品番号在
+// <ul class="post-meta"><li><i class="fa fa-circle-o"></i>FSDSS-172</li>
+// 中，必须先校验番号，避免 FSDSS-172 被当成 DSS-172。
+func parseActorsFromWikiArticles(articles []*html.Node, code string) []string {
+	for _, article := range articles {
+		codeNode := htmlquery.FindOne(article, `.//ul[contains(@class,'post-meta')]/li[i[contains(@class,'fa-circle-o')]]`)
+		if codeNode == nil || !sameMovieNumber(htmlquery.InnerText(codeNode), code) {
+			continue
+		}
+
+		var actors []string
+		for _, li := range htmlquery.Find(article, `.//li[contains(@class,'actress-name')]`) {
+			nodes := htmlquery.Find(li, `.//a`)
+			if len(nodes) == 0 {
+				nodes = []*html.Node{li}
+			}
+			for _, n := range nodes {
+				if name := strings.TrimSpace(getNodeText(n)); name != "" {
+					actors = append(actors, name)
+				}
+			}
+		}
+		return actors
+	}
+	return nil
+}
+
+// sameMovieNumber 比较两个番号是否表示同一部作品，忽略大小写、分隔符和
+// 补零位数，但保留字母前缀（DSS-172 与 FSDSS-172 不相等）。
+func sameMovieNumber(a, b string) bool {
+	a = ParseNumber(strings.TrimSpace(a))
+	b = ParseNumber(strings.TrimSpace(b))
+	return a != "" && b != "" && strings.EqualFold(a, b)
 }
 
 // 提取节点内的纯文本

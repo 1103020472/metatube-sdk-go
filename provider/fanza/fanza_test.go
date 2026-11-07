@@ -1,14 +1,54 @@
 package fanza
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/antchfx/htmlquery"
 	"github.com/stretchr/testify/assert"
+	"golang.org/x/net/html"
 
 	"github.com/1103020472/metatube-sdk-go/model"
 	"github.com/1103020472/metatube-sdk-go/provider"
 	"github.com/1103020472/metatube-sdk-go/provider/internal/testkit"
 )
+
+func TestParseActorsFromWikiArticles(t *testing.T) {
+	const page = `<html><body>
+<article class="archive-list">
+  <header class="archive-header">
+    <ul class="post-meta clearfix">
+      <li class="actress-name"><a href="/a">天使もえ</a></li>
+      <li><i class="fa fa-clone"></i><a href="/m">FALENO star</a></li>
+      <li><i class="fa fa-circle-o"></i>FSDSS-172</li>
+    </ul>
+  </header>
+</article>
+<article class="archive-list">
+  <header class="archive-header">
+    <ul class="post-meta clearfix">
+      <li class="actress-name"><a href="/b">素人A</a></li>
+      <li class="actress-name"><a href="/c">素人B</a></li>
+      <li><i class="fa fa-circle-o"></i>DSS-172</li>
+    </ul>
+  </header>
+</article>
+</body></html>`
+	doc, err := html.Parse(strings.NewReader(page))
+	assert.NoError(t, err)
+
+	articles := htmlquery.Find(doc, `//article[contains(@class,'archive-list')]`)
+	assert.Equal(t, []string{"素人A", "素人B"}, parseActorsFromWikiArticles(articles, "DSS-172"))
+	assert.Equal(t, []string{"天使もえ"}, parseActorsFromWikiArticles(articles, "FSDSS-172"))
+	assert.Nil(t, parseActorsFromWikiArticles(articles, "DSS-173"))
+}
+
+func TestSameMovieNumber(t *testing.T) {
+	assert.True(t, sameMovieNumber("DSS-172", "DSS00172"))
+	assert.True(t, sameMovieNumber("dss-172", "DSS-172"))
+	assert.False(t, sameMovieNumber("DSS-172", "FSDSS-172"))
+	assert.False(t, sameMovieNumber("", "DSS-172"))
+}
 
 func TestFANZA_CandidateIDs(t *testing.T) {
 	fz := New()
