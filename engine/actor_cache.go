@@ -22,6 +22,7 @@ type actorSearchCacheKey struct {
 	keyword  string
 	provider string
 	fallback bool
+	dbFirst  bool
 }
 
 // actorSearchCache caches successful, non-empty actor search results.
@@ -46,7 +47,7 @@ func newActorSearchCache() *actorSearchCache {
 	}
 }
 
-func (c *actorSearchCache) Get(keyword, provider string, fallback bool) ([]*model.ActorSearchResult, bool) {
+func (c *actorSearchCache) Get(keyword, provider string, fallback, dbFirst bool) ([]*model.ActorSearchResult, bool) {
 	if c == nil {
 		return nil, false
 	}
@@ -54,6 +55,7 @@ func (c *actorSearchCache) Get(keyword, provider string, fallback bool) ([]*mode
 		keyword:  keyword,
 		provider: provider,
 		fallback: fallback,
+		dbFirst:  dbFirst,
 	})
 	if item == nil {
 		return nil, false
@@ -63,7 +65,7 @@ func (c *actorSearchCache) Get(keyword, provider string, fallback bool) ([]*mode
 	return append([]*model.ActorSearchResult(nil), results...), true
 }
 
-func (c *actorSearchCache) Put(keyword, provider string, fallback bool, results []*model.ActorSearchResult) {
+func (c *actorSearchCache) Put(keyword, provider string, fallback, dbFirst bool, results []*model.ActorSearchResult) {
 	if c == nil || len(results) == 0 {
 		return
 	}
@@ -71,6 +73,7 @@ func (c *actorSearchCache) Put(keyword, provider string, fallback bool, results 
 		keyword:  keyword,
 		provider: provider,
 		fallback: fallback,
+		dbFirst:  dbFirst,
 	}, append([]*model.ActorSearchResult(nil), results...), ttlcache.DefaultTTL)
 }
 

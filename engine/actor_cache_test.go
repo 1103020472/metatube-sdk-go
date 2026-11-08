@@ -14,26 +14,28 @@ func TestActorSearchCache(t *testing.T) {
 		{ID: "1", Name: "上原亜衣", Provider: "av-league"},
 	}
 
-	cache.Put("上原亜衣", "av-league", true, results)
+	cache.Put("上原亜衣", "av-league", true, false, results)
 
-	got, ok := cache.Get("上原亜衣", "av-league", true)
+	got, ok := cache.Get("上原亜衣", "av-league", true, false)
 	assert.True(t, ok)
 	assert.Equal(t, results, got)
 
-	// Fallback and provider are part of the key.
-	_, ok = cache.Get("上原亜衣", "av-league", false)
+	// Fallback, provider and db_first are part of the key.
+	_, ok = cache.Get("上原亜衣", "av-league", false, false)
 	assert.False(t, ok)
-	_, ok = cache.Get("上原亜衣", "gfriends", true)
+	_, ok = cache.Get("上原亜衣", "gfriends", true, false)
+	assert.False(t, ok)
+	_, ok = cache.Get("上原亜衣", "av-league", true, true)
 	assert.False(t, ok)
 
 	// Empty results are never cached.
-	cache.Put("unknown", "av-league", true, nil)
-	_, ok = cache.Get("unknown", "av-league", true)
+	cache.Put("unknown", "av-league", true, false, nil)
+	_, ok = cache.Get("unknown", "av-league", true, false)
 	assert.False(t, ok)
 
 	// Returned slices are copies, so callers can append safely.
 	got = append(got, &model.ActorSearchResult{ID: "2"})
-	again, ok := cache.Get("上原亜衣", "av-league", true)
+	again, ok := cache.Get("上原亜衣", "av-league", true, false)
 	assert.True(t, ok)
 	assert.Len(t, again, 1)
 	assert.Len(t, got, 2)

@@ -21,6 +21,26 @@ import (
 	"github.com/1103020472/metatube-sdk-go/provider/gfriends"
 )
 
+// ActorSearchOptions controls how an actor search is resolved.
+type ActorSearchOptions struct {
+	// Fallback allows database results to be merged into (and, in the worst
+	// case, to stand in for) live provider results.
+	Fallback bool
+	// DBFirst returns a cached actor row for an exact name match without
+	// asking the provider at all. It is meant for callers that only need a
+	// stable provider id / image (movie scraping), not the provider's full
+	// current search index.
+	DBFirst bool
+}
+
+const (
+	// actorDBFirstMaxAge bounds how old a cached actor row may be before a
+	// DB-first search insists on a live lookup. Actor metadata is essentially
+	// static (name / birthday / measurements / social links), so half a year
+	// is a conservative freshness bound rather than a real change cadence.
+	actorDBFirstMaxAge = 180 * 24 * time.Hour
+)
+
 func (e *Engine) searchActorFromDB(keyword string, provider mt.Provider) (results []*model.ActorSearchResult, err error) {
 	var infos []*model.ActorInfo
 	if err = e.db.
@@ -37,18 +57,41 @@ func (e *Engine) searchActorFromDB(keyword string, provider mt.Provider) (result
 	return
 }
 
-func (e *Engine) searchActor(keyword string, provider mt.Provider, fallback bool) ([]*model.ActorSearchResult, error) {
-	if results, ok := e.actorSearchCache.Get(keyword, provider.Name(), fallback); ok {
+// searchActorFromDBFirst looks up an exact name match in the actor cache and
+// returns it without touching the provider. Rows without images are skipped so
+// that callers still get the Gfriends image fallback through a live search,
+// and rows older than actorDBFirstMaxAge fall back to a live lookup as well.
+func (e *Engine) searchActorFromDBFirst(keyword string, provider mt.Provider) ([]*model.ActorSearchResult, bool) {
+	if provider.Name() == gfriends.Name {
+		return nil, false
+	}
+	info := new(model.ActorInfo)
+	if err := e.db.
+		Where("provider = ? COLLATE NOCASE AND name = ? COLLATE NOCASE", provider.Name(), keyword).
+		First(info).Error; err != nil {
+		return nil, false
+	}
+	if !info.IsValid() || len(info.Images) == 0 {
+		return nil, false
+	}
+	if !info.UpdatedAt.IsZero() && time.Since(info.UpdatedAt) > actorDBFirstMaxAge {
+		return nil, false
+	}
+	return []*model.ActorSearchResult{info.ToSearchResult()}, true
+}
+
+func (e *Engine) searchActor(keyword string, provider mt.Provider, fallback, dbFirst bool) ([]*model.ActorSearchResult, error) {
+	if results, ok := e.actorSearchCache.Get(keyword, provider.Name(), fallback, dbFirst); ok {
 		return results, nil
 	}
-	results, err := e.searchActorUncached(keyword, provider, fallback)
+	results, err := e.searchActorUncached(keyword, provider, fallback, dbFirst)
 	if err == nil && len(results) > 0 {
-		e.actorSearchCache.Put(keyword, provider.Name(), fallback, results)
+		e.actorSearchCache.Put(keyword, provider.Name(), fallback, dbFirst, results)
 	}
 	return results, err
 }
 
-func (e *Engine) searchActorUncached(keyword string, provider mt.Provider, fallback bool) ([]*model.ActorSearchResult, error) {
+func (e *Engine) searchActorUncached(keyword string, provider mt.Provider, fallback, dbFirst bool) ([]*model.ActorSearchResult, error) {
 	innerSearch := func(keyword string) (results []*model.ActorSearchResult, err error) {
 		if provider.Name() == gfriends.Name {
 			return provider.(mt.ActorSearcher).SearchActor(keyword)
@@ -98,6 +141,13 @@ func (e *Engine) searchActorUncached(keyword string, provider mt.Provider, fallb
 		errors  []error
 	)
 	for _, name := range names {
+		if dbFirst {
+			if cached, ok := e.searchActorFromDBFirst(name, provider); ok {
+				e.logger.Printf("Search actor %s: DB hit (%s)", name, provider.Name())
+				results = append(results, cached...)
+				continue
+			}
+		}
 		innerResults, innerErr := innerSearch(name)
 		if innerErr != nil &&
 			// ignore InfoNotFound error.
@@ -118,14 +168,24 @@ func (e *Engine) searchActorUncached(keyword string, provider mt.Provider, fallb
 }
 
 func (e *Engine) SearchActor(keyword, name string, fallback bool) ([]*model.ActorSearchResult, error) {
+	return e.SearchActorWithOptions(keyword, name, ActorSearchOptions{Fallback: fallback})
+}
+
+// SearchActorWithOptions is SearchActor with explicit search options.
+func (e *Engine) SearchActorWithOptions(keyword, name string, opts ActorSearchOptions) ([]*model.ActorSearchResult, error) {
 	provider, err := e.GetActorProviderByName(name)
 	if err != nil {
 		return nil, err
 	}
-	return e.searchActor(keyword, provider, fallback)
+	return e.searchActor(keyword, provider, opts.Fallback, opts.DBFirst)
 }
 
 func (e *Engine) SearchActorAll(keyword string, fallback bool) (results []*model.ActorSearchResult, err error) {
+	return e.SearchActorAllWithOptions(keyword, ActorSearchOptions{Fallback: fallback})
+}
+
+// SearchActorAllWithOptions is SearchActorAll with explicit search options.
+func (e *Engine) SearchActorAllWithOptions(keyword string, opts ActorSearchOptions) (results []*model.ActorSearchResult, err error) {
 	type response struct {
 		Results  []*model.ActorSearchResult
 		Error    error
@@ -141,7 +201,7 @@ func (e *Engine) SearchActorAll(keyword string, fallback bool) (results []*model
 		startTime := time.Now()
 		go func(provider mt.ActorProvider) {
 			defer wg.Done()
-			innerResults, innerErr := e.searchActor(keyword, provider, fallback)
+			innerResults, innerErr := e.searchActor(keyword, provider, opts.Fallback, opts.DBFirst)
 			respCh <- response{
 				Results:  innerResults,
 				Error:    innerErr,
