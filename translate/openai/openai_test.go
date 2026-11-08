@@ -579,6 +579,20 @@ func TestLanguageDriftAllowsFuriganaParenthetical(t *testing.T) {
 	assert.NotEmpty(t, got)
 }
 
+// TestLanguageDriftAllowsKeptKanaNickname covers the false positive seen on
+// NOSKN-079: the review title was translated correctly but kept the actress
+// nickname ひびやん in kana. On that short bold line four kana out of eleven
+// letters (36%) crossed maxKanaRatio and the whole review chunk was thrown
+// away.
+func TestLanguageDriftAllowsKeptKanaNickname(t *testing.T) {
+	ok := "👤 永遠のゆきんこ · 2024-03-26 11:18<br>" +
+		"<b>[[S5]] 所以最喜欢ひびやん</b><br>" +
+		"浴衣装扮的ひびやん超级可爱，盘发造型格外适合。亲密恋爱的ひびやん可爱到犯规！"
+	got, err := validateResult(ok, "zh-CN")
+	assert.NoError(t, err)
+	assert.NotEmpty(t, got)
+}
+
 // TestLanguageDriftStillRejectsKanaOutsideParentheses keeps the check honest:
 // stripping the reading must not let a Japanese line through when the kana
 // sits outside the parentheses.

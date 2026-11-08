@@ -481,6 +481,13 @@ const (
 	maxKanaRatio = 0.3
 	// minRunesForDriftCheck skips short fragments: names, tags, dates.
 	minRunesForDriftCheck = 15
+	// minKanaForDriftCheck keeps a kept nickname from failing a translated
+	// line. Chinese output legitimately preserves a short kana name
+	// (ひびやん, 4 kana); on a short line such as a review title those few
+	// kana alone can exceed maxKanaRatio. A real drifted Japanese line of
+	// 15+ runes carries well over six kana, so this does not weaken the
+	// check meaningfully.
+	minKanaForDriftCheck = 6
 	// minRunesForEnglishDrift is deliberately longer than the Japanese
 	// threshold: a drifted English paragraph is long, while the short latin
 	// fragments that legitimately survive translation are not.
@@ -528,7 +535,11 @@ func looksUntranslated(text string) bool {
 	if len(letters) == 0 {
 		return false
 	}
-	return float64(len(kanaRe.FindAllString(text, -1)))/float64(len(letters)) > maxKanaRatio
+	kana := len(kanaRe.FindAllString(text, -1))
+	if kana < minKanaForDriftCheck {
+		return false
+	}
+	return float64(kana)/float64(len(letters)) > maxKanaRatio
 }
 
 // stripParenthesizedReadings removes short parenthesized segments that contain
