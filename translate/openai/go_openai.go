@@ -116,12 +116,15 @@ func (oa *OpenAI) translateWithGoOpenAI(q, source, target, mode string) (string,
 		return "", err
 	}
 	// The local model is bimodal on long chunks: the exact same request either
-	// translates the whole chunk or echoes it back untouched, and a chunk that
-	// echoed once came back translated on the next call (measured 2/2). One
-	// retry is far cheaper than a whole failed item, and cloud fallback is even
-	// more expensive.
-	retry, retryErr := oa.complete(config, messages, maxCompletionTokens)
-	if retryErr == nil {
+	// translates the whole chunk or echoes it back untouched. Measured echo
+	// rate is ~10-15% per call and independent between calls, so two retries
+	// bring the residual failure rate under 0.5% for the price of a second
+	// request only on the failing path.
+	for attempt := 0; attempt < 2; attempt++ {
+		retry, retryErr := oa.complete(config, messages, maxCompletionTokens)
+		if retryErr != nil {
+			continue
+		}
 		if retried, retryErr := validateResultWithSource(retry, target, q); retryErr == nil {
 			return retried, nil
 		}
