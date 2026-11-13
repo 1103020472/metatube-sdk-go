@@ -336,6 +336,19 @@ func TestPromptModeSingleNamesSourceLanguage(t *testing.T) {
 	}
 	assert.Contains(t, body.Messages[0].Content, "Translate the following Japanese text")
 	assert.Contains(t, body.Messages[0].Content, "into Simplified Chinese")
+	// Single layouts have no system prompt, so the kana rule must ride along.
+	assert.Contains(t, body.Messages[0].Content, chineseKanaRule)
+}
+
+// TestSingleInstructionKanaRuleOnlyForChinese keeps the extra sentence scoped:
+// it exists to stop Japanese leaking into Chinese output, so other targets and
+// the three-message layout must not change.
+func TestSingleInstructionKanaRuleOnlyForChinese(t *testing.T) {
+	oa := &OpenAI{}
+	assert.Contains(t, oa.renderInstruction("ja", "zh-CN", PromptModeSingle), chineseKanaRule)
+	assert.Contains(t, oa.renderInstruction("ja", "zh-TW", PromptModeSystemSingle), chineseKanaRule)
+	assert.NotContains(t, oa.renderInstruction("ja", "ko", PromptModeSingle), chineseKanaRule)
+	assert.NotContains(t, oa.renderInstruction("ja", "zh-CN", PromptModeDefault), chineseKanaRule)
 }
 
 // TestPromptModeSingleFallsBackWhenSourceUnknown keeps the old wording when the

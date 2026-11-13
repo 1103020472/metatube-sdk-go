@@ -388,21 +388,36 @@ func (oa *OpenAI) renderInstruction(source, target, mode string) string {
 
 	known := sourceName != "" && sourceName != "auto"
 
-	if mode == PromptModeDefault {
-		if !known {
-			return fmt.Sprintf("Please translate the following text into %s:", targetName)
-		}
-		return fmt.Sprintf("Please translate the following text from %s to %s:", sourceName, targetName)
+	instruction := ""
+	switch {
+	case mode == PromptModeDefault && !known:
+		instruction = fmt.Sprintf("Please translate the following text into %s:", targetName)
+	case mode == PromptModeDefault:
+		instruction = fmt.Sprintf("Please translate the following text from %s to %s:", sourceName, targetName)
+	case !known:
+		instruction = strings.ReplaceAll(defaultSingleInstructionNoSource, "{target}", targetName)
+	default:
+		instruction = strings.NewReplacer(
+			"{target}", targetName,
+			"{source}", sourceName,
+		).Replace(defaultSingleInstruction)
 	}
 
-	if !known {
-		return strings.ReplaceAll(defaultSingleInstructionNoSource, "{target}", targetName)
+	// The single layouts carry no system prompt, so nothing else keeps the
+	// model from leaving katakana in place. Without this, qwen3.5 copied a
+	// 172-char FC2-style summary back verbatim on 3/3 runs (the drift check
+	// then rejected the chunk); with it the output is fully Chinese 3/3.
+	if mode != PromptModeDefault && isChineseTarget(target) {
+		instruction += " " + chineseKanaRule
 	}
-	return strings.NewReplacer(
-		"{target}", targetName,
-		"{source}", sourceName,
-	).Replace(defaultSingleInstruction)
+	return instruction
 }
+
+// chineseKanaRule is appended to the single-message layouts for Chinese
+// targets. It is deliberately narrower than "no kana at all": the rule only
+// asks for katakana loanwords to be rewritten, which is what actually makes
+// the model commit to translating instead of echoing the source.
+const chineseKanaRule = "Rewrite katakana loanwords in Chinese."
 
 // controlTokenRe matches leaked model control tokens such as <|hy-Assistant|>,
 // <｜hy_begin▁of▁sentence｜> or their byte-mangled variants.
