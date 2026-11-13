@@ -661,16 +661,26 @@ func detectLanguageDrift(s, target, source string) bool {
 	// blanket English check rejects perfectly good chunks. Only enforce it when
 	// the source itself carries no English prose.
 	allowEnglish := sourceCarriesEnglishProse(source)
+	total, drifted := 0, 0
 	for _, line := range lineSplitRe.Split(s, -1) {
 		text, exempt := lineText(line)
 		if exempt {
 			continue
 		}
+		letters := len(letterRe.FindAllString(text, -1))
+		total += letters
 		if looksUntranslated(text) || (!allowEnglish && looksLikeEnglishProse(text)) {
-			return true
+			drifted += letters
 		}
 	}
-	return false
+	if drifted == 0 {
+		return false
+	}
+	// One short stray line is not a drifted chunk. A performer name kept in
+	// kana ("ひめか（ひめか）", 20 letters) failed a 1000-character summary that
+	// was otherwise fully translated, and a single line of an FC2 notice did
+	// the same. Reject only when the drifted share is material.
+	return drifted*5 > total
 }
 
 // sourceCarriesEnglishProse reports whether any source line is already English

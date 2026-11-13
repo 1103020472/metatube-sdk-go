@@ -612,6 +612,22 @@ func TestLanguageDriftAllowsSourceEnglishNotice(t *testing.T) {
 	assert.ErrorContains(t, err, "still in the source language")
 }
 
+// TestLanguageDriftToleratesOneShortStrayLine covers FC2-PPV-4781625: a single
+// performer name kept in kana must not reject a 1000-character chapter that is
+// otherwise fully translated.
+func TestLanguageDriftToleratesOneShortStrayLine(t *testing.T) {
+	mixed := "这部作品的画面非常清晰，演员的表现也很自然，整体节奏把握得相当不错。" +
+		"ひめかひめかひめかひめかひめか" +
+		"导演在细节上的处理同样到位，镜头语言干净利落，值得完整看完一遍。"
+	got, err := validateResult(mixed, "zh-CN")
+	assert.NoError(t, err)
+	assert.NotEmpty(t, got)
+
+	// A chunk that is mostly drift must still fail.
+	_, err = validateResult("ひめかひめかひめかひめかひめか<br>ひめかひめかひめかひめか", "zh-CN")
+	assert.ErrorContains(t, err, "still in the source language")
+}
+
 // TestLanguageDriftAllowsFuriganaParenthetical covers the false positive seen
 // on PRWF-010: the model translated the summary correctly but kept the
 // actress reading as 小松空（こまつそら），24岁。 Those five kana were enough to
