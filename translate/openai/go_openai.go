@@ -509,6 +509,10 @@ const (
 	// "ーーーー" rules and "はぁはぁ" moans; "チンポチンポ" (3 distinct) is
 	// still checked.
 	maxDecorativeDistinctRunes = 2
+	// maxKanaCarryOver is the share of the source's kana a translation may
+	// still contain. Echoed chunks sit at ~1.0; real translations keep a name
+	// or two and land well under 0.3. A chunk translated halfway sits between.
+	maxKanaCarryOver = 0.6
 	// minRunesForEnglishDrift is deliberately longer than the Japanese
 	// threshold: a drifted English paragraph is long, while the short latin
 	// fragments that legitimately survive translation are not.
@@ -648,20 +652,45 @@ func isChineseTarget(target string) bool {
 	return strings.HasPrefix(t, "zh")
 }
 
-// detectLanguageDrift reports whether any line of the completion is still in
-// the source language (or slipped into English) while the caller asked for
-// Chinese.
+// detectLanguageDrift reports whether the completion is still in the source
+// language (or slipped into English) while the caller asked for Chinese.
+//
+// The kana signal is measured against the source instead of against the
+// completion's own length: what matters is how much of the kana the model was
+// given actually survived. A correct Chinese translation keeps almost none
+// (a name or two); a model that echoed the input keeps all of it. The relative
+// form is what makes short titles safe — "【VR】ひめか" is mostly kana to begin
+// with, so an absolute ratio would flag it even when it was translated.
 func detectLanguageDrift(s, target, source string) bool {
 	if !isChineseTarget(target) {
 		return false
+	}
+	// Callers without the source (unit tests, legacy paths) keep the old
+	// per-line judgement; the relative rule below needs both sides.
+	if strings.TrimSpace(source) == "" {
+		for _, line := range lineSplitRe.Split(s, -1) {
+			text, exempt := lineText(line)
+			if exempt {
+				continue
+			}
+			if looksUntranslated(text) || looksLikeEnglishProse(text) {
+				return true
+			}
+		}
+		return false
+	}
+	if kanaCarriedOver(s, source) {
+		return true
 	}
 	// FC2 summaries end with legal notices that are already written in
 	// English ("RE-UPLOAD FOR THIS MOVIE IS STRICTLY PROHIBITED."). Every model
 	// keeps those lines verbatim because translating them would be wrong, so a
 	// blanket English check rejects perfectly good chunks. Only enforce it when
 	// the source itself carries no English prose.
-	allowEnglish := sourceCarriesEnglishProse(source)
-	total, drifted := 0, 0
+	if sourceCarriesEnglishProse(source) {
+		return false
+	}
+	total, english := 0, 0
 	for _, line := range lineSplitRe.Split(s, -1) {
 		text, exempt := lineText(line)
 		if exempt {
@@ -669,18 +698,28 @@ func detectLanguageDrift(s, target, source string) bool {
 		}
 		letters := len(letterRe.FindAllString(text, -1))
 		total += letters
-		if looksUntranslated(text) || (!allowEnglish && looksLikeEnglishProse(text)) {
-			drifted += letters
+		if looksLikeEnglishProse(text) {
+			english += letters
 		}
 	}
-	if drifted == 0 {
+	// A single English line inside an otherwise Chinese chunk is a kept notice
+	// or a title; only a chunk that is mostly English is drift.
+	return english*2 > total
+}
+
+// kanaCarriedOver reports whether the completion kept an implausible share of
+// the source's kana. Without a source to compare against it falls back to the
+// absolute ratio, which is what unit tests and any legacy caller see.
+func kanaCarriedOver(s, source string) bool {
+	outKana := len(kanaRe.FindAllString(s, -1))
+	if outKana < minKanaForDriftCheck {
 		return false
 	}
-	// One short stray line is not a drifted chunk. A performer name kept in
-	// kana ("ひめか（ひめか）", 20 letters) failed a 1000-character summary that
-	// was otherwise fully translated, and a single line of an FC2 notice did
-	// the same. Reject only when the drifted share is material.
-	return drifted*5 > total
+	srcKana := len(kanaRe.FindAllString(source, -1))
+	if srcKana == 0 {
+		return false
+	}
+	return float64(outKana)/float64(srcKana) > maxKanaCarryOver
 }
 
 // sourceCarriesEnglishProse reports whether any source line is already English

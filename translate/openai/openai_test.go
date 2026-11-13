@@ -616,16 +616,30 @@ func TestLanguageDriftAllowsSourceEnglishNotice(t *testing.T) {
 // performer name kept in kana must not reject a 1000-character chapter that is
 // otherwise fully translated.
 func TestLanguageDriftToleratesOneShortStrayLine(t *testing.T) {
+	source := "この作品は、美しい女性が登場する人気シリーズの決定版です。撮影の質も高く、" +
+		"演出も丁寧で、見応えのある内容になっています。ぜひ最後までご覧ください。"
 	mixed := "这部作品的画面非常清晰，演员的表现也很自然，整体节奏把握得相当不错。" +
 		"ひめかひめかひめかひめかひめか" +
 		"导演在细节上的处理同样到位，镜头语言干净利落，值得完整看完一遍。"
-	got, err := validateResult(mixed, "zh-CN")
+	got, err := validateResultWithSource(mixed, "zh-CN", source)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, got)
 
-	// A chunk that is mostly drift must still fail.
-	_, err = validateResult("ひめかひめかひめかひめかひめか<br>ひめかひめかひめかひめか", "zh-CN")
+	// A chunk that kept all of the source's kana must still fail.
+	_, err = validateResultWithSource(source, "zh-CN", source)
 	assert.ErrorContains(t, err, "still in the source language")
+}
+
+// TestKanaCarryOverShortTitleIsSafe pins the short-title case: a title that is
+// mostly kana is not drift on its own, only an untranslated echo of it is.
+func TestKanaCarryOverShortTitleIsSafe(t *testing.T) {
+	source := "食ザーごっくんバイキング8 あおいれな"
+	_, err := validateResultWithSource(source, "zh-CN", source)
+	assert.ErrorContains(t, err, "still in the source language")
+
+	got, err := validateResultWithSource("食器吞咽自助餐 8 青井玲奈", "zh-CN", source)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, got)
 }
 
 // TestLanguageDriftAllowsFuriganaParenthetical covers the false positive seen
