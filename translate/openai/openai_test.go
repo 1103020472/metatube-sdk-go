@@ -17,6 +17,33 @@ import (
 	"github.com/1103020472/metatube-sdk-go/translate"
 )
 
+// TestDriftIsRetriedOnce covers the bimodal local model: the same request
+// either translates a long chunk or echoes it, so an echo must be retried once
+// instead of failing the whole item.
+func TestDriftIsRetriedOnce(t *testing.T) {
+	source := "この作品は素晴らしいです。とても良い作品です。"
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		content := source
+		if calls > 1 {
+			content = "这是一部非常出色的作品。"
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"` + content +
+			`"},"finish_reason":"stop"}]}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	got, err := (&OpenAI{
+		APIKey: "k", APIUrl: srv.URL, Model: "m", Translator: TranslatorGoOpenAI,
+		PromptMode: PromptModeSingle,
+	}).Translate(source, "ja", "zh-CN")
+	assert.NoError(t, err)
+	assert.Equal(t, "这是一部非常出色的作品。", got)
+	assert.Equal(t, 2, calls)
+}
+
 func TestOpenaiTranslate(t *testing.T) {
 	if os.Getenv("OPENAI_API_KEY") == "" {
 		t.Skip("OPENAI_API_KEY not set; skipping live integration test")

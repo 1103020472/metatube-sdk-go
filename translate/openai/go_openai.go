@@ -108,7 +108,31 @@ func (oa *OpenAI) translateWithGoOpenAI(q, source, target, mode string) (string,
 		out = retry
 	}
 
-	return validateResultWithSource(out, target, q)
+	result, err := validateResultWithSource(out, target, q)
+	if err == nil {
+		return result, nil
+	}
+	if !isDriftError(err) {
+		return "", err
+	}
+	// The local model is bimodal on long chunks: the exact same request either
+	// translates the whole chunk or echoes it back untouched, and a chunk that
+	// echoed once came back translated on the next call (measured 2/2). One
+	// retry is far cheaper than a whole failed item, and cloud fallback is even
+	// more expensive.
+	retry, retryErr := oa.complete(config, messages, maxCompletionTokens)
+	if retryErr == nil {
+		if retried, retryErr := validateResultWithSource(retry, target, q); retryErr == nil {
+			return retried, nil
+		}
+	}
+	return "", err
+}
+
+// isDriftError distinguishes the retryable "model echoed the source" case from
+// the fatal ones (empty reply, canned non-translation).
+func isDriftError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "still in the source language")
 }
 
 // refusalErrorPrefix opens every error this file returns when the model
