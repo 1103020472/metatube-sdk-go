@@ -597,6 +597,21 @@ func TestLanguageDriftAllowsDecorativeLines(t *testing.T) {
 	assert.ErrorContains(t, err, "still in the source language")
 }
 
+// TestLanguageDriftAllowsSourceEnglishNotice covers FC2-PPV-4782000: the summary
+// ends with an English legal notice that the model keeps verbatim. The English
+// check must not fire when the source itself carries that line.
+func TestLanguageDriftAllowsSourceEnglishNotice(t *testing.T) {
+	source := "◎本作品はFC2,Incのみでの販売となります。\n◎RE-UPLOAD FOR THIS MOVIE IS STRICTLY PROHIBITED."
+	out := "◎本作品仅由 FC2, Inc. 销售。\n◎RE-UPLOAD FOR THIS MOVIE IS STRICTLY PROHIBITED."
+	got, err := validateResultWithSource(out, "zh-CN", source)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, got)
+
+	// Without that source line the same English output is still drift.
+	_, err = validateResultWithSource(out, "zh-CN", "◎本作品はFC2,Incのみでの販売となります。")
+	assert.ErrorContains(t, err, "still in the source language")
+}
+
 // TestLanguageDriftAllowsFuriganaParenthetical covers the false positive seen
 // on PRWF-010: the model translated the summary correctly but kept the
 // actress reading as 小松空（こまつそら），24岁。 Those five kana were enough to

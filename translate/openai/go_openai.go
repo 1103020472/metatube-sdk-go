@@ -77,7 +77,7 @@ func (oa *OpenAI) translateWithGoOpenAI(q, source, target, mode string) (string,
 	// goes on to the retry below.
 	if isRefusalReply(out, q) {
 		if trimmed := stripTrailingRefusal(out); trimmed != "" && !isRefusalReply(trimmed, q) {
-			return validateResult(trimmed, target)
+			return validateResultWithSource(trimmed, target, q)
 		}
 	}
 
@@ -108,7 +108,7 @@ func (oa *OpenAI) translateWithGoOpenAI(q, source, target, mode string) (string,
 		out = retry
 	}
 
-	return validateResult(out, target)
+	return validateResultWithSource(out, target, q)
 }
 
 // refusalErrorPrefix opens every error this file returns when the model
@@ -651,16 +651,33 @@ func isChineseTarget(target string) bool {
 // detectLanguageDrift reports whether any line of the completion is still in
 // the source language (or slipped into English) while the caller asked for
 // Chinese.
-func detectLanguageDrift(s, target string) bool {
+func detectLanguageDrift(s, target, source string) bool {
 	if !isChineseTarget(target) {
 		return false
 	}
+	// FC2 summaries end with legal notices that are already written in
+	// English ("RE-UPLOAD FOR THIS MOVIE IS STRICTLY PROHIBITED."). Every model
+	// keeps those lines verbatim because translating them would be wrong, so a
+	// blanket English check rejects perfectly good chunks. Only enforce it when
+	// the source itself carries no English prose.
+	allowEnglish := sourceCarriesEnglishProse(source)
 	for _, line := range lineSplitRe.Split(s, -1) {
 		text, exempt := lineText(line)
 		if exempt {
 			continue
 		}
-		if looksUntranslated(text) || looksLikeEnglishProse(text) {
+		if looksUntranslated(text) || (!allowEnglish && looksLikeEnglishProse(text)) {
+			return true
+		}
+	}
+	return false
+}
+
+// sourceCarriesEnglishProse reports whether any source line is already English
+// prose. Such lines are meant to survive translation untouched.
+func sourceCarriesEnglishProse(source string) bool {
+	for _, line := range lineSplitRe.Split(source, -1) {
+		if looksLikeEnglishProse(strings.TrimSpace(line)) {
 			return true
 		}
 	}
@@ -670,6 +687,13 @@ func detectLanguageDrift(s, target string) bool {
 // validateResult rejects empty completions, canned non-translations and
 // output that never left the source language.
 func validateResult(s, target string) (string, error) {
+	return validateResultWithSource(s, target, "")
+}
+
+// validateResultWithSource is validateResult for callers that still have the
+// source text: the English drift check needs it to tell a kept legal notice
+// from a model that gave up and answered in English.
+func validateResultWithSource(s, target, source string) (string, error) {
 	if s == "" {
 		return "", fmt.Errorf("openai: empty translation result")
 	}
@@ -680,7 +704,7 @@ func validateResult(s, target string) (string, error) {
 			}
 		}
 	}
-	if detectLanguageDrift(s, target) {
+	if detectLanguageDrift(s, target, source) {
 		return "", fmt.Errorf(
 			"openai: output is still in the source language or in English despite target %q; refusing to write an untranslated result",
 			target)
