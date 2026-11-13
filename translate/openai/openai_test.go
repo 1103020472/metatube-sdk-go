@@ -566,6 +566,24 @@ func TestLanguageDriftAllowsKeptNames(t *testing.T) {
 	assert.NotEmpty(t, got)
 }
 
+// TestLanguageDriftAllowsDecorativeLines covers the false positive seen on
+// FC2-PPV-4988770: the summary contains separator rules made of a single
+// prolonged-sound mark and lines of the same moan repeated. Models copy them
+// verbatim, and the old check rejected an otherwise correct translation.
+func TestLanguageDriftAllowsDecorativeLines(t *testing.T) {
+	ok := "ーーーーーーーーーーーーーーーーーーーー<br>" +
+		"あぁあぁあぁあぁあぁあぁあぁあぁあぁあぁ<br>" +
+		"这部作品的画面非常漂亮，演员的表现也很自然，值得一看。<br>" +
+		"ーーーーーーーーーーーーーーーーーーーー"
+	got, err := validateResult(ok, "zh-CN")
+	assert.NoError(t, err)
+	assert.NotEmpty(t, got)
+
+	// A genuine kana sentence must still be rejected.
+	_, err = validateResult("これは日本語の文章ですそして翻訳されていません", "zh-CN")
+	assert.ErrorContains(t, err, "still in the source language")
+}
+
 // TestLanguageDriftAllowsFuriganaParenthetical covers the false positive seen
 // on PRWF-010: the model translated the summary correctly but kept the
 // actress reading as 小松空（こまつそら），24岁。 Those five kana were enough to

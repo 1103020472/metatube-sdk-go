@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	openai "github.com/sashabaranov/go-openai"
@@ -488,6 +489,11 @@ const (
 	// 15+ runes carries well over six kana, so this does not weaken the
 	// check meaningfully.
 	minKanaForDriftCheck = 6
+	// maxDecorativeDistinctRunes is the number of distinct letters a line may
+	// repeat and still count as decoration rather than prose. Two covers
+	// "ーーーー" rules and "はぁはぁ" moans; "チンポチンポ" (3 distinct) is
+	// still checked.
+	maxDecorativeDistinctRunes = 2
 	// minRunesForEnglishDrift is deliberately longer than the Japanese
 	// threshold: a drifted English paragraph is long, while the short latin
 	// fragments that legitimately survive translation are not.
@@ -528,6 +534,13 @@ func looksUntranslated(text string) bool {
 	if utf8.RuneCountInString(text) < minRunesForDriftCheck {
 		return false
 	}
+	// Decorative separators ("ーーーーーーーー") and moaning onomatopoeia
+	// ("あぁあぁあぁ") are copied verbatim by every model because there is
+	// nothing to translate. Counting them as drifted Japanese rejects the
+	// whole chunk even when the rest of it was translated correctly.
+	if isDecorativeLine(text) {
+		return false
+	}
 	// Drop furigana-style readings before measuring: they are the one place
 	// where a Chinese line legitimately carries several kana.
 	text = stripParenthesizedReadings(text)
@@ -540,6 +553,28 @@ func looksUntranslated(text string) bool {
 		return false
 	}
 	return float64(kana)/float64(len(letters)) > maxKanaRatio
+}
+
+// isDecorativeLine reports whether a line carries no translatable language:
+// no kanji, and at most a couple of distinct letters repeated over and over.
+// That covers the FC2-style "ーーーー" rules and short moans ("はぁはぁ"),
+// while a real kana sentence (「これは日本語の文章です」) keeps well over two
+// distinct letters and is still checked.
+func isDecorativeLine(text string) bool {
+	if hanRe.MatchString(text) {
+		return false
+	}
+	seen := make(map[rune]struct{}, maxDecorativeDistinctRunes+1)
+	for _, r := range text {
+		if !unicode.IsLetter(r) && !unicode.IsNumber(r) {
+			continue
+		}
+		seen[r] = struct{}{}
+		if len(seen) > maxDecorativeDistinctRunes {
+			return false
+		}
+	}
+	return true
 }
 
 // stripParenthesizedReadings removes short parenthesized segments that contain
