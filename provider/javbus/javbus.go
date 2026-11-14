@@ -52,6 +52,10 @@ func New() *JavBus {
 			scraper.WithDisableRedirects(),
 			scraper.WithHeaders(map[string]string{
 				"Referer": baseURL,
+				// javbus sends every request without a Chinese
+				// Accept-Language to /doc/driver-verify (age gate), whose
+				// page carries no metadata. Always advertise zh as primary.
+				"Accept-Language": "zh-CN,zh;q=0.9",
 			}),
 			scraper.WithCookies(baseURL, []*http.Cookie{
 				// existmag=all

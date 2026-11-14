@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync/atomic"
 
 	"github.com/gocolly/colly/v2"
 	"golang.org/x/net/html"
@@ -22,6 +23,7 @@ import (
 var (
 	_ provider.MovieProvider = (*FC2HUB)(nil)
 	_ provider.MovieSearcher = (*FC2HUB)(nil)
+	_ provider.ConfigSetter  = (*FC2HUB)(nil)
 )
 
 const (
@@ -37,10 +39,58 @@ const (
 
 type FC2HUB struct {
 	*scraper.Scraper
+	cookie    atomic.Value // string
+	userAgent atomic.Value // string
 }
 
 func New() *FC2HUB {
-	return &FC2HUB{scraper.NewDefaultScraper(Name, baseURL, Priority, language.Japanese)}
+	return &FC2HUB{Scraper: scraper.NewDefaultScraper(Name, baseURL, Priority, language.Japanese)}
+}
+
+// SetConfig accepts extra "cookie" and "user-agent" values, e.g.
+// MT_MOVIE_PROVIDER_FC2HUB__COOKIE="cf_clearance=...; ..." and
+// MT_MOVIE_PROVIDER_FC2HUB__USER_AGENT="Mozilla/5.0 ... Chrome/157.0.0.0 ...".
+//
+// javten.com sits behind a Cloudflare managed challenge and ties cf_clearance
+// to the exact User-Agent of the browser that solved it, so both values have to
+// come from the same browser session.
+func (fc2hub *FC2HUB) SetConfig(config provider.Config) error {
+	if value, err := config.GetString("cookie"); err == nil {
+		if value = strings.TrimSpace(value); value != "" {
+			fc2hub.cookie.Store(value)
+		}
+	}
+	for _, key := range []string{"user-agent", "user_agent"} {
+		value, err := config.GetString(key)
+		if err != nil {
+			continue
+		}
+		if value = strings.TrimSpace(value); value != "" {
+			fc2hub.userAgent.Store(value)
+		}
+		break
+	}
+	return nil
+}
+
+// collector returns a cloned collector carrying the configured Cloudflare
+// clearance cookie and User-Agent, if any.
+func (fc2hub *FC2HUB) collector() *colly.Collector {
+	c := fc2hub.ClonedCollector()
+	cookie, _ := fc2hub.cookie.Load().(string)
+	userAgent, _ := fc2hub.userAgent.Load().(string)
+	if cookie == "" && userAgent == "" {
+		return c
+	}
+	c.OnRequest(func(r *colly.Request) {
+		if cookie != "" {
+			r.Headers.Set("Cookie", cookie)
+		}
+		if userAgent != "" {
+			r.Headers.Set("User-Agent", userAgent)
+		}
+	})
+	return c
 }
 
 func (fc2hub *FC2HUB) GetMovieInfoByID(id string) (info *model.MovieInfo, err error) {
@@ -78,7 +128,7 @@ func (fc2hub *FC2HUB) GetMovieInfoByURL(rawURL string) (info *model.MovieInfo, e
 		Genres:        []string{},
 	}
 
-	c := fc2hub.ClonedCollector()
+	c := fc2hub.collector()
 	// Allow redirecting, for cases like http -> https
 	c.SetRedirectHandler(func(req *http.Request, via []*http.Request) error {
 		return nil
@@ -218,7 +268,7 @@ func (fc2hub *FC2HUB) NormalizeMovieKeyword(keyword string) string {
 }
 
 func (fc2hub *FC2HUB) SearchMovie(keyword string) (results []*model.MovieSearchResult, err error) {
-	c := fc2hub.ClonedCollector()
+	c := fc2hub.collector()
 	c.ParseHTTPErrorResponse = true
 	c.SetRedirectHandler(func(req *http.Request, via []*http.Request) error {
 		return http.ErrUseLastResponse

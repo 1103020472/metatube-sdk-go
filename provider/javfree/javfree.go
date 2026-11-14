@@ -29,9 +29,12 @@ const (
 )
 
 const (
-	baseURL   = "https://javfree.me/"
-	movieURL  = "https://javfree.me/%s/%s"
-	searchURL = "https://javfree.me/?s=%s"
+	baseURL  = "https://javfree.me/"
+	movieURL = "https://javfree.me/%s/%s"
+	// The site's own search box posts to /search/{keyword}/. The legacy
+	// /?s= entry point answers "403 Forbidden: Invalid Search Parameter"
+	// for plain FC2 numbers, so search through the rewrite path instead.
+	searchURL = "https://javfree.me/search/%s/"
 )
 
 type JAVFREE struct {
@@ -126,9 +129,27 @@ func (javfree *JAVFREE) NormalizeMovieKeyword(keyword string) string {
 	return fc2util.ParseNumber(keyword)
 }
 
+var fc2NumberPattern = regexp.MustCompile(`\d{4,}`)
+
+// fc2Number reduces a keyword to the bare FC2 number, which is the only form
+// javfree indexes. NormalizeMovieKeyword already produces it for the engine
+// search path; the fallback keeps direct callers (e.g. "FC2-1234567-C") working.
+func fc2Number(keyword string) string {
+	if num := fc2util.ParseNumber(strings.TrimSpace(keyword)); num != "" {
+		return num
+	}
+	if ss := fc2NumberPattern.FindAllString(keyword, -1); len(ss) > 0 {
+		return ss[len(ss)-1]
+	}
+	return ""
+}
+
 func (javfree *JAVFREE) SearchMovie(keyword string) (results []*model.MovieSearchResult, err error) {
 	c := javfree.ClonedCollector()
-	fc2ID := keyword[strings.LastIndex(keyword, "-")+1:]
+	fc2ID := fc2Number(keyword)
+	if fc2ID == "" {
+		return nil, nil
+	}
 	c.OnXML(`//article[@class="hentry clear"]`, func(e *colly.XMLElement) {
 		var thumb, cover string
 		thumb = e.Request.AbsoluteURL(e.ChildAttr(`.//a/div/img`, "src"))
