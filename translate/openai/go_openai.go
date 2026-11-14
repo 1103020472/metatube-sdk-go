@@ -115,13 +115,27 @@ func (oa *OpenAI) translateWithGoOpenAI(q, source, target, mode string) (string,
 	if !isDriftError(err) {
 		return "", err
 	}
-	// The local model is bimodal on long chunks: the exact same request either
-	// translates the whole chunk or echoes it back untouched. Measured echo
-	// rate is ~10-15% per call and independent between calls, so two retries
-	// bring the residual failure rate under 0.5% for the price of a second
-	// request only on the failing path.
+	// The local model is bimodal on long chunks: the same request either
+	// translates the whole chunk or echoes it back untouched. Repeating the
+	// exact request is useless here because the plugin runs at temperature 0:
+	// several real FC2 chunks echoed on every identical retry. Change the
+	// prompt instead. Some chunks respond to "only translate the Japanese
+	// parts", while others need the stronger no-kana system constraint. Two
+	// different retries cover both observed modes and are only paid on the
+	// failing path.
 	for attempt := 0; attempt < 2; attempt++ {
-		retry, retryErr := oa.complete(config, messages, maxCompletionTokens)
+		retryMessages := messages
+		switch attempt {
+		case 0:
+			retryMessages = oa.buildMessagesWithInstruction(q,
+				oa.renderInstruction(source, target, mode)+" "+
+					fmt.Sprintf(driftRetryInstructionSuffix, lookupLanguage(target)),
+				mode)
+		case 1:
+			retryMessages = withSystemPrompt(messages,
+				fmt.Sprintf(driftRetrySystemPrompt, lookupLanguage(target)))
+		}
+		retry, retryErr := oa.complete(config, retryMessages, maxCompletionTokens)
 		if retryErr != nil {
 			continue
 		}
@@ -131,6 +145,20 @@ func (oa *OpenAI) translateWithGoOpenAI(q, source, target, mode string) (string,
 	}
 	return "", err
 }
+
+const (
+	// driftRetryInstructionSuffix is the first retry strategy. FC2 summaries
+	// are often already trilingual (English/Chinese/Japanese), and asking for
+	// a full translation makes the model copy the whole chunk. Asking it to
+	// translate only the Japanese lines leaves the existing Chinese/English
+	// untouched and gives the model a smaller job it actually completes.
+	driftRetryInstructionSuffix = "Translate only the Japanese portions into %s, and leave lines in other languages unchanged."
+
+	// driftRetrySystemPrompt is the second retry strategy. It is deliberately
+	// absolute: kana cannot survive a correct translation, so making any kana
+	// an explicit error pulls the model out of the copy-the-source mode.
+	driftRetrySystemPrompt = "Output %s only. Any output containing Japanese kana is invalid."
+)
 
 // isDriftError distinguishes the retryable "model echoed the source" case from
 // the fatal ones (empty reply, canned non-translation).
@@ -212,6 +240,35 @@ func withNeutralSystemPrompt(messages []openai.ChatCompletionMessage) []openai.C
 		out = append(out, m)
 	}
 	return out
+}
+
+// withSystemPrompt prepends a system constraint without dropping the layout's
+// original system prompt. In single-prompt mode there is no system message, so
+// one is added; in the chat layouts the constraint is merged into the existing
+// system turn. The instruction and source turns are left untouched.
+func withSystemPrompt(messages []openai.ChatCompletionMessage,
+	prompt string) []openai.ChatCompletionMessage {
+	out := make([]openai.ChatCompletionMessage, 0, len(messages)+1)
+	added := false
+	for _, m := range messages {
+		if m.Role != openai.ChatMessageRoleSystem {
+			out = append(out, m)
+			continue
+		}
+		if added {
+			continue
+		}
+		m.Content = prompt + "\n\n" + m.Content
+		out = append(out, m)
+		added = true
+	}
+	if added {
+		return out
+	}
+	return append([]openai.ChatCompletionMessage{{
+		Role:    openai.ChatMessageRoleSystem,
+		Content: prompt,
+	}}, out...)
 }
 
 // refusalRe matches the shape of a refusal rather than one exact sentence.
@@ -368,6 +425,13 @@ func ellipsis(s string, limit int) string {
 // buildMessages renders the request messages for the configured layout.
 func (oa *OpenAI) buildMessages(q, source, target, mode string) []openai.ChatCompletionMessage {
 	instruction := oa.renderInstruction(source, target, mode)
+	return oa.buildMessagesWithInstruction(q, instruction, mode)
+}
+
+// buildMessagesWithInstruction renders the request with an explicit
+// instruction line. buildMessages uses it for the normal path; the drift retry
+// uses it to send a different instruction without rebuilding the layout.
+func (oa *OpenAI) buildMessagesWithInstruction(q, instruction, mode string) []openai.ChatCompletionMessage {
 	switch mode {
 	case PromptModeSingle:
 		// No system message at all: translation-only models such as hy-mt2

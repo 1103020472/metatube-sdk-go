@@ -23,8 +23,11 @@ import (
 func TestDriftIsRetriedOnce(t *testing.T) {
 	source := "この作品は素晴らしいです。とても良い作品です。"
 	calls := 0
+	bodies := new([][]byte)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
+		body, _ := io.ReadAll(r.Body)
+		*bodies = append(*bodies, body)
 		content := source
 		if calls > 1 {
 			content = "这是一部非常出色的作品。"
@@ -42,6 +45,42 @@ func TestDriftIsRetriedOnce(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "这是一部非常出色的作品。", got)
 	assert.Equal(t, 2, calls)
+
+	var retry capturedMessages
+	if assert.NoError(t, json.Unmarshal((*bodies)[1], &retry)) && assert.Len(t, retry.Messages, 1) {
+		assert.Contains(t, retry.Messages[0].Content, "Translate only the Japanese portions")
+	}
+}
+
+// TestDriftRetryChangesStrategy covers the temperature-0 case that made
+// identical retries useless: the chunk echoed on both the original request and
+// the "Japanese portions only" retry, then succeeded once the system prompt
+// made any surviving kana an explicit error.
+func TestDriftRetryChangesStrategy(t *testing.T) {
+	source := "この作品は素晴らしいです。とても良い作品です。"
+	srv, bodies := newScriptedServer(t, source, source, "这是一部非常出色的作品。")
+
+	got, err := (&OpenAI{
+		APIKey: "k", APIUrl: srv.URL, Model: "m",
+		PromptMode: PromptModeSingle, Temperature: floatPtr(0),
+	}).Translate(source, "ja", "zh-CN")
+
+	assert.NoError(t, err)
+	assert.Equal(t, "这是一部非常出色的作品。", got)
+	if !assert.Len(t, *bodies, 3) {
+		return
+	}
+
+	var second capturedMessages
+	if assert.NoError(t, json.Unmarshal((*bodies)[1], &second)) && assert.Len(t, second.Messages, 1) {
+		assert.Contains(t, second.Messages[0].Content, "Translate only the Japanese portions")
+	}
+
+	var third capturedMessages
+	if assert.NoError(t, json.Unmarshal((*bodies)[2], &third)) && assert.Len(t, third.Messages, 2) {
+		assert.Equal(t, "system", third.Messages[0].Role)
+		assert.Contains(t, third.Messages[0].Content, "Any output containing Japanese kana is invalid")
+	}
 }
 
 func TestOpenaiTranslate(t *testing.T) {
