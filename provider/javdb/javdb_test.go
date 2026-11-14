@@ -211,6 +211,31 @@ func TestJavDBFilterResultsByNumberWithRewrites(t *testing.T) {
 	assert.Equal(t, "FC2-1234567", filtered[0].Number)
 }
 
+func TestJavDBNarrowSearchResults(t *testing.T) {
+	// The first results of https://javdb.com/search?q=FC2-4731501&f=all,
+	// which does not index FC2-4731501 at all.
+	results := []*model.MovieSearchResult{
+		searchResult("aaaaa", "FC2-4731001"),
+		searchResult("bbbbb", "FC2-4734501"),
+		searchResult("ccccc", "FC2-4731401"),
+		searchResult("ddddd", "FC2-4739501"),
+		searchResult("eeeee", "FC2-4731301"),
+		searchResult("fffff", "FC2-473101"),
+	}
+
+	// A complete number without an exact hit must not leak unrelated ones.
+	assert.Empty(t, narrowSearchResults(results, "FC2-4731501"))
+	assert.Empty(t, narrowSearchResults(results, "SSIS-001"))
+
+	// An exact hit still wins, including JavDB's rewritten numbers.
+	assert.Len(t, narrowSearchResults(results, "FC2-4734501"), 1)
+	assert.Len(t, narrowSearchResults(results, "FC2-PPV-4734501"), 1)
+
+	// Title keywords keep JavDB's own results.
+	assert.Equal(t, results, narrowSearchResults(results, "ナース個撮"))
+	assert.Equal(t, results, narrowSearchResults(results, "ysxjpjnop"))
+}
+
 func TestJavDBFindResultByNumber(t *testing.T) {
 	results := []*model.MovieSearchResult{
 		searchResult("mbQOd", "LUXU-1234"),

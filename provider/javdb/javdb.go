@@ -342,13 +342,23 @@ func (javdb *JavDB) SearchMovie(keyword string) (results []*model.MovieSearchRes
 	if err != nil || len(results) == 0 {
 		return results, err
 	}
+	return narrowSearchResults(results, keyword), nil
+}
 
+// narrowSearchResults drops the fuzzy search results that do not refer to the
+// wanted number. JavDB's search is fuzzy: querying "FC2-4731501" returns
+// "FC2-4731001", "FC2-4734501" and other neighbours when the exact entry is
+// not indexed. Such results are never useful for a complete number, so an
+// empty slice is returned instead of falling back to JavDB's own list.
+// Title searches are fuzzy by nature and keep JavDB's results as-is.
+func narrowSearchResults(results []*model.MovieSearchResult, keyword string) []*model.MovieSearchResult {
 	if filtered := filterResultsByNumber(results, keyword); len(filtered) > 0 {
-		return filtered, nil
+		return filtered
 	}
-	// Nothing similar enough was found, keep JavDB's own results as a
-	// best-effort fallback so that the caller can still pick manually.
-	return results, nil
+	if fullNumberRegexp.MatchString(keyword) {
+		return nil
+	}
+	return results
 }
 
 // searchMovie returns JavDB's raw search results, without any filtering.
